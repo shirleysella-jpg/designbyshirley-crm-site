@@ -148,6 +148,10 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: start; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; }
 td input[type=text], td input[type=number], td input[type=date] { width: 100%; min-width: 90px; }
+table.items td { padding: 4px 4px; }
+table.items td input[type=text] { min-width: 120px; }
+table.items td input[type=number] { min-width: 70px; width: 80px; }
+.linkcell { display: flex; gap: 6px; align-items: center; }
 .totals { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px; }
 .totals div { display: grid; }
 .totals b { font-size: 18px; font-variant-numeric: tabular-nums; }

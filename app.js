@@ -269,7 +269,7 @@ function projectForm(p, all = []) {
 
 // Project page ------------------------------------------------------------------
 async function renderProject(id) {
-  const [p, stages, tasks, dists, pays, questions, meetings, pcontacts] = await Promise.all([
+  const [p, stages, tasks, dists, pays, questions, meetings, pcontacts, items] = await Promise.all([
     run(db.from("projects").select("*").eq("id", id).single()),
     run(db.from("stages").select("*").eq("project_id", id).order("position")),
     run(db.from("tasks").select("*").eq("project_id", id).order("position")),
@@ -277,9 +277,10 @@ async function renderProject(id) {
     run(db.from("payments").select("*").eq("project_id", id).order("position")),
     run(db.from("questions").select("*").eq("project_id", id).order("created_at")),
     run(db.from("meetings").select("*").eq("project_id", id).order("meet_date", { ascending: false })),
-    run(db.from("project_contacts").select("*, contacts(*)").eq("project_id", id))
+    run(db.from("project_contacts").select("*, contacts(*)").eq("project_id", id)),
+    run(db.from("items").select("*").eq("project_id", id).order("position").order("id"))
   ]);
-  const ctx = { p, stages, tasks, dists, pays, questions, meetings, pcontacts };
+  const ctx = { p, stages, tasks, dists, pays, questions, meetings, pcontacts, items };
   const s = projectSummary({ ...p, stages, tasks });
   const hours = tasks.reduce((a, t) => a + Number(t.hours || 0), 0);
   const path = p.folder_name ? PROJECTS_ROOT + p.folder_name : null;
@@ -294,9 +295,9 @@ async function renderProject(id) {
     p.billing === "hourly" || hours ? h("span", {}, "שעות: ", h("b", { class: "num", text: hours.toLocaleString("he-IL") })) : null,
     p.budget ? h("span", {}, "תקציב: ", h("b", { class: "num", text: money(p.budget) })) : null);
 
-  const tabs = [["stages", `שלבים ${s.done}/${s.total}`], ["dists", `מסמכים שנשלחו ${dists.length}`], ["pays", "תשלומים"],
+  const tabs = [["stages", `שלבים ${s.done}/${s.total}`], ["items", `חומרים ורכישות ${items.length || ""}`.trim()], ["dists", `מסמכים שנשלחו ${dists.length}`], ["pays", "תשלומים"],
     ["questions", `שאלות ללקוח ${questions.filter(q => !q.answered_at).length || ""}`.trim()], ["meetings", "פגישות"], ["contacts", "אנשי קשר"], ["folder", "תיקייה"]];
-  const body = { stages: stagesTab, dists: distsTab, pays: paysTab, questions: questionsTab, meetings: meetingsTab, contacts: contactsTab, folder: folderTab }[state.projectTab] || stagesTab;
+  const body = { stages: stagesTab, items: itemsTab, dists: distsTab, pays: paysTab, questions: questionsTab, meetings: meetingsTab, contacts: contactsTab, folder: folderTab }[state.projectTab] || stagesTab;
 
   const bodyEl = await body(ctx);
   paint("p" + id,
@@ -447,6 +448,100 @@ function changePanel(ctx) {
   ]);
 }
 
+// Materials and purchases ----------------------------------------------------------
+const ITEM_STATUSES = ["לבחירה", "נבחר", "הוזמן", "סופק", "הותקן"];
+// Column sets per category. "calc" columns are computed, never stored.
+const C = {
+  room: ["room", "חדר / אזור"], supplier: ["supplier", "ספק"], qty: ["quantity", "כמות", "num"], price: ["unit_price", "מחיר ליח'", "num"],
+  status: ["status", "סטטוס", "status"], link: ["link", "קישור", "link"], notes: ["notes", "הערות"], total: ["_total", "סה\"כ", "calc"],
+  delivery: ["delivery_date", "אספקה", "date"]
+};
+const ITEM_CATEGORIES = [
+  { key: "tiles", label: "ריצוף וחיפוי", cols: [C.room, ["name", "שימוש (רצפה / קיר / חיפוי)"], ["model", "מוצר / דגם"], C.supplier, ["size", "מידת אריח"], ["color", "גוון / גימור"],
+    ["quantity", "מ\"ר נטו", "num"], ["waste_pct", "% פחת", "num"], ["_order", "מ\"ר להזמנה", "calc"], ["unit_price", "מחיר למ\"ר", "num"], C.total, C.status, C.notes] },
+  { key: "sanitary", label: "כלים סניטריים וארונות רחצה", cols: [C.room, ["name", "פריט"], ["model", "דגם / מק\"ט"], C.supplier, ["color", "גימור / גוון"], ["size", "מידה"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
+  { key: "lighting", label: "גופי תאורה", cols: [C.room, ["name", "סוג הגוף"], ["model", "דגם"], C.supplier, ["color", "גוון הגוף"], ["size", "מידה / גוון אור"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
+  { key: "colors", label: "גוונים לקירות", cols: [C.room, ["name", "קיר / מיקום"], ["model", "קוד גוון"], ["color", "שם הגוון"], ["supplier", "חברה"], ["size", "סוג צבע / גמר"], C.notes] },
+  { key: "carpentry", label: "נגרות", cols: [["model", "סימון"], C.room, ["name", "תיאור"], ["color", "חזית וגוון"], ["size", "מידות"], ["supplier", "נגר"], C.qty, C.price, C.total, C.status, C.notes] },
+  { key: "furniture", label: "ריהוט", cols: [C.room, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "בד / גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
+  { key: "decor", label: "טקסטיל ואקססוריז", cols: [C.room, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
+  { key: "kitchen", label: "נלווים למטבח", cols: [["name", "פריט (משטח, כיור, ברז, מכשיר)"], ["model", "דגם"], C.supplier, ["size", "מידה"], ["color", "גוון / גימור"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] }
+];
+// Rounded up to 2 decimals; the inner round strips float noise (39 × 1.1 = 42.900000000000006)
+function orderQty(x) { return x.quantity == null ? null : Math.ceil(Math.round(Number(x.quantity) * (1 + Number(x.waste_pct || 0) / 100) * 1e6) / 1e4) / 100; }
+function itemTotal(x, cat) {
+  const q = cat === "tiles" ? orderQty(x) : (x.quantity == null ? 1 : Number(x.quantity));
+  return x.unit_price == null || q == null ? null : Math.round(q * Number(x.unit_price) * 100) / 100;
+}
+const calcValue = (x, f, cat) => f === "_order" ? (orderQty(x) ?? "—") : money(itemTotal(x, cat));
+
+function itemsTab(ctx) {
+  const { p, items } = ctx;
+  const cat = ITEM_CATEGORIES.find(c => c.key === state.itemCat) || ITEM_CATEGORIES[0];
+  const list = items.filter(x => x.category === cat.key);
+  const hasPrice = cat.cols.some(c => c[0] === "_total");
+  const totalEl = h("b", { class: "num" });
+  const updateTotal = () => { totalEl.textContent = money(list.reduce((a, x) => a + (itemTotal(x, cat.key) || 0), 0)); };
+  updateTotal();
+
+  const row = x => {
+    const calcCells = [];
+    const tr = h("tr", {}, cat.cols.map(([f, , type]) => {
+      if (type === "calc") { const td = h("td", { class: "num", text: calcValue(x, f, cat.key) }); calcCells.push([td, f]); return td; }
+      const save = async v => {
+        const patch = { [f]: v };
+        if (f === "status" && v === "הוזמן" && !x.order_date) patch.order_date = today();
+        await run(db.from("items").update(patch).eq("id", x.id)); Object.assign(x, patch);
+        calcCells.forEach(([td, cf]) => { td.textContent = calcValue(x, cf, cat.key); }); updateTotal();
+      };
+      if (type === "status") return h("td", {}, select(ITEM_STATUSES, x.status, save, { "aria-label": "סטטוס" }));
+      const input = h("input", { type: type === "num" ? "number" : type === "date" ? "date" : "text", step: type === "num" ? "any" : null, value: x[f] ?? "",
+        "aria-label": f, on: { change: e => save(e.target.value === "" ? null : type === "num" ? Number(e.target.value) : e.target.value) } });
+      if (type === "link") return h("td", { class: "linkcell" }, input, x.link ? h("a", { href: x.link, target: "_blank", rel: "noopener", text: "פתיחה" }) : null);
+      return h("td", {}, input);
+    }), h("td", {}, confirmButton("מחיקה", async () => { await run(db.from("items").delete().eq("id", x.id)); tr.remove(); ctx.items.splice(ctx.items.indexOf(x), 1); list.splice(list.indexOf(x), 1); updateTotal(); })));
+    return tr;
+  };
+
+  const tbody = h("tbody", {}, list.map(row));
+  const addRow = async () => {
+    const created = await run(db.from("items").insert({ project_id: p.id, category: cat.key, position: list.length + 1, waste_pct: cat.key === "tiles" ? 10 : null }).select().single());
+    ctx.items.push(created); list.push(created);
+    const tr = row(created); tbody.append(tr); tr.querySelector("input")?.focus();
+  };
+  const counts = Object.fromEntries(ITEM_CATEGORIES.map(c => [c.key, items.filter(x => x.category === c.key).length]));
+
+  return h("div", { class: "group" },
+    h("div", { class: "filters" }, ITEM_CATEGORIES.map(c => h("button", { class: "chip" + (c.key === cat.key ? " on" : ""), type: "button", text: c.label + (counts[c.key] ? ` ${counts[c.key]}` : ""),
+      on: { click: () => { state.itemCat = c.key; renderProject(p.id); } } }))),
+    h("div", { class: "card" },
+      h("div", { class: "row" }, h("h3", { text: cat.label }), h("span", { class: "spacer" }),
+        hasPrice ? h("span", { class: "small muted" }, "סה\"כ: ", totalEl) : null,
+        h("button", { class: "btn small ghost", type: "button", text: "ייצוא לאקסל", on: { click: () => exportItems(p, items) } })),
+      cat.key === "tiles" ? h("p", { class: "small muted", text: "מ\"ר להזמנה מחושב מהמ\"ר נטו ועוד אחוז הפחת (ברירת מחדל 10%, אפשר לשנות בכל שורה)." }) : null,
+      h("div", { class: "tablewrap" }, h("table", { class: "items" },
+        h("thead", {}, h("tr", {}, cat.cols.map(([, label]) => h("th", { text: label })), h("th", {}))), tbody)),
+      h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שורה", on: { click: addRow } }))));
+}
+
+// One CSV for the whole project; the BOM lets Excel read Hebrew correctly
+function exportItems(p, items) {
+  const esc = v => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = [];
+  for (const cat of ITEM_CATEGORIES) {
+    const list = items.filter(x => x.category === cat.key);
+    if (!list.length) continue;
+    lines.push(esc(cat.label));
+    lines.push(cat.cols.map(c => esc(c[1])).join(","));
+    for (const x of list) lines.push(cat.cols.map(([f, , type]) => esc(type === "calc" ? (f === "_order" ? orderQty(x) : itemTotal(x, cat.key)) : x[f])).join(","));
+    lines.push("");
+  }
+  if (!lines.length) { toast("אין עדיין פריטים לייצוא"); return; }
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = h("a", { href: URL.createObjectURL(blob), download: `${p.number || ""} ${p.name} - חומרים ורכישות.csv`.trim() });
+  document.body.append(a); a.click(); a.remove();
+}
+
 function distsTab({ dists, p }) {
   return h("div", { class: "card" },
     h("p", { class: "small muted", text: p.last_sync ? `עודכן מתיקיית PDF ב-${fmt(p.last_sync)}` : "הרשימה תתעדכן מתיקיית PDF של הפרויקט פעם ביום." }),
@@ -558,9 +653,10 @@ function folderTab({ p }) {
 // Today & this week -------------------------------------------------------------
 async function renderToday() {
   const t = today(), week = addDays(t, 7);
-  const [tasks, pays] = await Promise.all([
+  const [tasks, pays, deliveries] = await Promise.all([
     run(db.from("tasks").select("*, projects(id, name, number)").not("status", "in", "(\"הושלם\",\"לא רלוונטי\")").order("due_date", { nullsFirst: false })),
-    run(db.from("payments").select("*, projects(id, name, number)").is("paid_at", null).not("due_date", "is", null).lte("due_date", week).order("due_date"))
+    run(db.from("payments").select("*, projects(id, name, number)").is("paid_at", null).not("due_date", "is", null).lte("due_date", week).order("due_date")),
+    run(db.from("items").select("*, projects(id, name, number)").in("status", ["נבחר", "הוזמן"]).not("delivery_date", "is", null).lte("delivery_date", week).order("delivery_date"))
   ]);
   const label = x => x.projects ? h("a", { href: `#/p/${x.projects.id}`, text: `${x.projects.number ? x.projects.number + " · " : ""}${x.projects.name}` }) : "משימה כללית";
   const refresh = () => renderToday();
@@ -580,7 +676,11 @@ async function renderToday() {
     pays.length ? h("section", { class: "group" }, h("h2", {}, "תשלומים לגבות", h("span", { class: "pill oak", text: String(pays.length) })),
       h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, pays.map(x => h("tr", {},
         h("td", {}, label(x)), h("td", { text: x.name }), h("td", { class: "num", text: money(x.amount) }),
-        h("td", { class: "num", text: fmt(x.due_date) + (x.due_date < t ? " · באיחור" : "") }))))))) : null);
+        h("td", { class: "num", text: fmt(x.due_date) + (x.due_date < t ? " · באיחור" : "") }))))))) : null,
+    deliveries.length ? h("section", { class: "group" }, h("h2", {}, "אספקות השבוע", h("span", { class: "pill oak", text: String(deliveries.length) })),
+      h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, deliveries.map(x => h("tr", {},
+        h("td", {}, label(x)), h("td", { text: [x.name, x.model].filter(Boolean).join(" · ") }), h("td", { text: x.supplier || "" }),
+        h("td", { text: x.status }), h("td", { class: "num", text: fmt(x.delivery_date) + (x.delivery_date < t ? " · באיחור" : "") }))))))) : null);
 }
 
 // General tasks (not tied to a project) -------------------------------------------
