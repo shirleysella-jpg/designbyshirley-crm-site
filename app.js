@@ -279,7 +279,7 @@ async function renderProject(id) {
     p.billing === "hourly" || hours ? h("span", {}, "שעות: ", h("b", { class: "num", text: hours.toLocaleString("he-IL") })) : null,
     p.budget ? h("span", {}, "תקציב: ", h("b", { class: "num", text: money(p.budget) })) : null);
 
-  const tabs = [["stages", `שלבים ${s.done}/${s.total}`], ["dists", `הפצות ${dists.length}`], ["pays", "תשלומים"],
+  const tabs = [["stages", `שלבים ${s.done}/${s.total}`], ["dists", `מסמכים שנשלחו ${dists.length}`], ["pays", "תשלומים"],
     ["questions", `שאלות ללקוח ${questions.filter(q => !q.answered_at).length || ""}`.trim()], ["meetings", "פגישות"], ["contacts", "אנשי קשר"], ["folder", "תיקייה"]];
   const body = { stages: stagesTab, dists: distsTab, pays: paysTab, questions: questionsTab, meetings: meetingsTab, contacts: contactsTab, folder: folderTab }[state.projectTab] || stagesTab;
 
@@ -383,7 +383,7 @@ function stagesTab(ctx) {
         field("יעד לשלב", h("input", { type: "date", value: s.due_date || "", on: { change: async e => { await run(db.from("stages").update({ due_date: e.target.value || null }).eq("id", s.id)); s.due_date = e.target.value || null; toast("נשמר"); } } })),
         s.typical_days ? h("span", { text: `משך טיפוסי: ${s.typical_days} ימים` }) : null,
         s.needs_approval ? h("span", { class: "pill oak", text: "נסגר באישור לקוח" }) : null,
-        s.distribute_to ? h("span", { text: "הפצה: " + s.distribute_to }) : null);
+        s.distribute_to ? h("span", { text: "נשלח ל: " + s.distribute_to }) : null);
       const add = h("input", { type: "text", placeholder: "משימה חדשה בשלב הזה", "aria-label": "משימה חדשה" });
       const addTask = async () => {
         const name = add.value.trim(); if (!name) return;
@@ -431,7 +431,7 @@ function distsTab({ dists, p }) {
     dists.length ? h("div", { class: "tablewrap" }, h("table", {},
       h("thead", {}, h("tr", {}, h("th", { text: "תאריך" }), h("th", { text: "תיאור" }), h("th", { text: "קבצים" }))),
       h("tbody", {}, dists.map(d => h("tr", {}, h("td", { class: "num", text: fmt(d.dist_date) }), h("td", { text: d.description || d.folder_name }), h("td", { class: "num", text: d.file_count ?? "" }))))))
-      : h("div", { class: "empty" }, "עוד אין הפצות."));
+      : h("div", { class: "empty" }, "עוד אין מסמכים שנשלחו."));
 }
 
 function paysTab(ctx) {
