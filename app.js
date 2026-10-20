@@ -552,33 +552,54 @@ function distsTab({ dists, p }) {
 }
 
 function paysTab(ctx) {
-  const { pays, p } = ctx;
-  const total = pays.reduce((a, x) => a + Number(x.amount || 0), 0);
-  const paid = pays.filter(x => x.paid_at).reduce((a, x) => a + Number(x.amount || 0), 0);
+  const { p } = ctx;
   const refresh = () => renderProject(p.id);
   const upd = (x, patch) => run(db.from("payments").update(patch).eq("id", x.id)).then(() => { Object.assign(x, patch); refresh(); });
-  return h("div", { class: "card" },
-    h("div", { class: "totals" },
-      h("div", {}, h("span", { class: "small muted", text: "שכר טרחה, לפני מע\"מ" }), h("b", { text: money(total) })),
+  const sum = list => list.reduce((a, x) => a + Number(x.amount || 0), 0);
+  const fees = ctx.pays.filter(x => x.kind !== "commission");
+  const coms = ctx.pays.filter(x => x.kind === "commission");
+
+  const totals = (list, labels) => {
+    const total = sum(list), paid = sum(list.filter(x => x.paid_at));
+    return h("div", { class: "totals" },
+      h("div", {}, h("span", { class: "small muted", text: labels[0] }), h("b", { text: money(total) })),
       h("div", {}, h("span", { class: "small muted", text: "התקבל, לפני מע\"מ" }), h("b", { text: money(paid) })),
       h("div", {}, h("span", { class: "small muted", text: "יתרה, לפני מע\"מ" }), h("b", { text: money(total - paid) })),
-      h("div", {}, h("span", { class: "small muted", text: "יתרה כולל מע\"מ" }), h("b", { text: money((total - paid) * (1 + VAT)) }))),
-    pays.length ? h("div", { class: "tablewrap" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["שלב תשלום", "סכום לפני מע\"מ", "כולל מע\"מ", "מתי", "תאריך יעד", "שולם", ""].map(t => h("th", { text: t })))),
-      h("tbody", {}, pays.map(x => h("tr", {},
-        h("td", {}, h("input", { type: "text", value: x.name, on: { change: e => upd(x, { name: e.target.value || "תשלום" }) } })),
-        h("td", {}, h("input", { type: "number", value: x.amount ?? "", on: { change: e => upd(x, { amount: e.target.value === "" ? null : Number(e.target.value) }) } })),
-        h("td", { class: "num", text: x.amount == null ? "—" : money(Number(x.amount) * (1 + VAT)) }),
-        h("td", {}, h("input", { type: "text", value: x.trigger_note || "", placeholder: "למשל: בתחילת שלב הליווי", on: { change: e => upd(x, { trigger_note: e.target.value || null }) } })),
-        h("td", {}, h("input", { type: "date", value: x.due_date || "", on: { change: e => upd(x, { due_date: e.target.value || null }) } })),
-        h("td", {}, h("label", { class: "row" }, h("input", { type: "checkbox", checked: !!x.paid_at, on: { change: e => upd(x, { paid_at: e.target.checked ? today() : null }) } }), x.paid_at ? fmt(x.paid_at) : "")),
-        h("td", {}, confirmButton("מחיקה", () => run(db.from("payments").delete().eq("id", x.id)).then(refresh))))))))
-      : h("div", { class: "empty" }, "עוד אין שלבי תשלום. הוסיפי אותם לפי הצעת המחיר."),
-    h("div", { class: "row" },
-      h("button", { class: "btn small", type: "button", text: "הוספת שלב תשלום", on: { click: async () => {
-        await run(db.from("payments").insert({ project_id: p.id, name: `תשלום ${pays.length + 1}`, position: pays.length + 1 })); refresh();
-      } } }),
-      h("span", { class: "small muted", text: `מע"מ מחושב לפי ${VAT * 100}%.` })));
+      h("div", {}, h("span", { class: "small muted", text: "יתרה כולל מע\"מ" }), h("b", { text: money((total - paid) * (1 + VAT)) })));
+  };
+  const cells = {
+    text: (x, f, ph, fallback) => h("td", {}, h("input", { type: "text", value: x[f] || "", placeholder: ph || "", on: { change: e => upd(x, { [f]: e.target.value || fallback || null }) } })),
+    amount: x => h("td", {}, h("input", { type: "number", value: x.amount ?? "", on: { change: e => upd(x, { amount: e.target.value === "" ? null : Number(e.target.value) }) } })),
+    vat: x => h("td", { class: "num", text: x.amount == null ? "—" : money(Number(x.amount) * (1 + VAT)) }),
+    due: x => h("td", {}, h("input", { type: "date", value: x.due_date || "", "aria-label": "צפוי להיכנס", on: { change: e => upd(x, { due_date: e.target.value || null }) } })),
+    paid: x => h("td", {}, h("label", { class: "row" }, h("input", { type: "checkbox", checked: !!x.paid_at, "aria-label": "שולם", on: { change: e => upd(x, { paid_at: e.target.checked ? today() : null }) } }), x.paid_at ? fmt(x.paid_at) : "")),
+    del: x => h("td", {}, confirmButton("מחיקה", () => run(db.from("payments").delete().eq("id", x.id)).then(refresh)))
+  };
+
+  return h("div", { class: "group" },
+    h("section", { class: "card" },
+      h("h3", { text: "שכר טרחה" }),
+      totals(fees, ["שכר טרחה, לפני מע\"מ"]),
+      fees.length ? h("div", { class: "tablewrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["שלב תשלום", "סכום לפני מע\"מ", "כולל מע\"מ", "מתי", "צפוי להיכנס", "שולם", ""].map(t => h("th", { text: t })))),
+        h("tbody", {}, fees.map(x => h("tr", {}, cells.text(x, "name", "", "תשלום"), cells.amount(x), cells.vat(x),
+          cells.text(x, "trigger_note", "למשל: בתחילת שלב הליווי"), cells.due(x), cells.paid(x), cells.del(x))))))
+        : h("div", { class: "empty" }, "עוד אין שלבי תשלום. הוסיפי אותם לפי הצעת המחיר."),
+      h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שלב תשלום", on: { click: async () => {
+        await run(db.from("payments").insert({ project_id: p.id, kind: "fee", name: `תשלום ${fees.length + 1}`, position: fees.length + 1 })); refresh();
+      } } }))),
+    h("section", { class: "card" },
+      h("h3", { text: "עמלות ספקים" }),
+      totals(coms, ["עמלות, לפני מע\"מ"]),
+      coms.length ? h("div", { class: "tablewrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["ספק", "על מה", "סכום לפני מע\"מ", "כולל מע\"מ", "צפוי להיכנס", "שולם", "הערות", ""].map(t => h("th", { text: t })))),
+        h("tbody", {}, coms.map(x => h("tr", {}, cells.text(x, "supplier", "שם הספק"), cells.text(x, "name", "ארונות, ספה, סניטריה…", "עמלה"), cells.amount(x), cells.vat(x),
+          cells.due(x), cells.paid(x), cells.text(x, "trigger_note", "למשל: אחרי האספקה"), cells.del(x))))))
+        : h("div", { class: "empty" }, "עוד אין עמלות ספקים בפרויקט."),
+      h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת עמלה", on: { click: async () => {
+        await run(db.from("payments").insert({ project_id: p.id, kind: "commission", name: "עמלה", position: 100 + coms.length + 1 })); refresh();
+      } } }))),
+    h("p", { class: "small muted", text: `מע"מ מחושב לפי ${VAT * 100}%. כל תשלום עם תאריך "צפוי להיכנס" בשבוע הקרוב יופיע ב"היום והשבוע".` }));
 }
 
 function questionsTab({ questions, p }) {
@@ -675,7 +696,7 @@ async function renderToday() {
     section("ממתין לאחרים", waiting, "wait"),
     pays.length ? h("section", { class: "group" }, h("h2", {}, "תשלומים לגבות", h("span", { class: "pill oak", text: String(pays.length) })),
       h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, pays.map(x => h("tr", {},
-        h("td", {}, label(x)), h("td", { text: x.name }), h("td", { class: "num", text: money(x.amount) }),
+        h("td", {}, label(x)), h("td", { text: x.kind === "commission" ? `עמלה: ${[x.supplier, x.name].filter(Boolean).join(" · ")}` : x.name }), h("td", { class: "num", text: money(x.amount) }),
         h("td", { class: "num", text: fmt(x.due_date) + (x.due_date < t ? " · באיחור" : "") }))))))) : null,
     deliveries.length ? h("section", { class: "group" }, h("h2", {}, "אספקות השבוע", h("span", { class: "pill oak", text: String(deliveries.length) })),
       h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, deliveries.map(x => h("tr", {},
