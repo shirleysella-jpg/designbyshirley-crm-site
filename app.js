@@ -10,7 +10,8 @@ const TYPES = { F: "שיפוץ מלא כולל הלבשה", R: "שיפוץ בל�
 const PROJECT_STATUSES = ["הצעת מחיר נשלחה", "פעיל, בתכנון", "פעיל, בביצוע", "מושהה", "הסתיים"];
 const TASK_STATUSES = ["לא התחיל", "בעבודה", "ממתין לאישור לקוח", "ממתין לבעל מקצוע או לספק", "הושלם", "לא רלוונטי"];
 const WAITING = ["ממתין לאישור לקוח", "ממתין לבעל מקצוע או לספק"];
-const PRIORITIES = { 1: "דחוף", 2: "רגיל", 3: "נמוך" };
+// Color marks: 1 red = urgent, 2 orange = immediate, 3 green = not urgent, null = no mark
+const MARKS = [[1, "דחוף"], [2, "מיידי"], [3, "לא דחוף"]];
 const CATEGORIES = ["עסק", "חשבונות", "שיווק", "אישי", "ילדים"];
 const CONTACT_KINDS = ["קבלן", "נגר", "אלומיניום", "ספק מטבחים", "ספק ריצוף וחיפוי", "ספק תאורה", "ספק ריהוט", "יזם / חברה קבלנית", "לקוח", "אחר"];
 const VAT = 0.18;
@@ -83,6 +84,16 @@ function select(options, value, onChange, attrs = {}) {
   s.value = value ?? "";
   if (onChange) s.addEventListener("change", () => onChange(s.value));
   return s;
+}
+// Three colored dots; clicking the chosen color again clears it
+function markPicker(value, onChange) {
+  const wrap = h("span", { class: "marks", role: "group", "aria-label": "סימון בצבע" });
+  for (const [v, label] of MARKS) {
+    wrap.append(h("button", { type: "button", class: `mark m${v}`, title: label, "aria-label": label, "aria-pressed": String(value === v),
+      on: { click: e => { e.stopPropagation(); onChange(value === v ? null : v); } } }));
+  }
+  wrap.addEventListener("keydown", e => e.stopPropagation());
+  return wrap;
 }
 function field(label, input, cls) { return h("label", { class: "field" + (cls ? " " + cls : "") }, label, input); }
 
@@ -305,7 +316,7 @@ async function renderProject(id) {
 }
 
 function taskRow(t, opts = {}) {
-  const row = h("div", { class: "task" + (isDone(t) ? " is-done" : "") + (t.status === "לא רלוונטי" ? " is-na" : "") });
+  const row = h("div", { class: "task" + (isDone(t) ? " is-done" : "") + (t.status === "לא רלוונטי" ? " is-na" : "") + (t.priority ? ` marked m${t.priority}` : "") });
   const cb = h("input", { type: "checkbox", checked: isDone(t), "aria-label": "בוצע: " + t.name });
   cb.addEventListener("change", async () => { await updateTask(t, { status: cb.checked ? "הושלם" : "לא התחיל" }); opts.onChange?.(t); });
   const name = h("div", { class: "tname" }, t.name, t.optional ? h("span", { class: "opt-mark", text: "לפעמים" }) : null,
@@ -318,7 +329,7 @@ function taskRow(t, opts = {}) {
     late ? h("span", { class: "pill late", text: "באיחור" }) : null,
     waitDays >= FOLLOW_UP_DAYS ? h("span", { class: "pill wait", text: `${waitDays} ימים בלי תשובה` }) : null,
     select(TASK_STATUSES, t.status, async v => { await updateTask(t, { status: v }); opts.onChange?.(t); }, { "aria-label": "סטטוס" }),
-    select(Object.entries(PRIORITIES), String(t.priority), async v => { await updateTask(t, { priority: Number(v) }); }, { "aria-label": "עדיפות" }),
+    markPicker(t.priority, async v => { await updateTask(t, { priority: v }); opts.onChange ? opts.onChange(t) : null; }),
     h("input", { type: "date", value: t.due_date || "", "aria-label": "תאריך יעד", on: { change: async e => { await updateTask(t, { due_date: e.target.value || null }); opts.onChange?.(t); } } }),
     h("button", { class: "link small", type: "button", text: "עוד", on: { click: () => { extra.hidden = !extra.hidden; } } }));
   extra.append(
@@ -363,9 +374,10 @@ function stagesTab(ctx) {
     const done = relevant.filter(isDone).length;
     const late = s.due_date && !s.done_at && s.due_date < today();
     const open = state.openStages.has(s.id);
-    const card = h("section", { class: "stage" + (s === current ? " current" : "") });
+    const card = h("section", { class: "stage" + (s === current ? " current" : "") + (s.priority ? ` marked m${s.priority}` : "") });
     const head = h("div", { class: "stage-head", role: "button", tabindex: "0", "aria-expanded": String(open) },
       h("span", { class: "sno", text: String(i + 1) }), h("h3", { text: s.name }),
+      markPicker(s.priority, async v => { await run(db.from("stages").update({ priority: v }).eq("id", s.id)); s.priority = v; renderProject(p.id); }),
       s.done_at ? h("span", { class: "pill done", text: "הושלם " + fmt(s.done_at) }) : null,
       s === current ? h("span", { class: "pill oak", text: "שלב נוכחי" }) : null,
       late ? h("span", { class: "pill late", text: "באיחור" }) : null,
@@ -381,8 +393,14 @@ function stagesTab(ctx) {
         await run(db.from("stages").update(patch).eq("id", s.id)); Object.assign(s, patch);
         toast(s.typical_days ? `תאריך יעד מוצע: ${fmt(patch.due_date)}. אפשר לשנות.` : "השלב התחיל"); rerender();
       } } }) : null;
+      const openTasks = st.filter(isOpen);
+      const completeBtn = openTasks.length ? h("button", { class: "btn small ghost", type: "button", text: "סימון כל השלב כהושלם", on: { click: async () => {
+        await run(db.from("tasks").update({ status: "הושלם", done_at: today(), waiting_since: null }).in("id", openTasks.map(t => t.id)));
+        openTasks.forEach(t => Object.assign(t, { status: "הושלם", done_at: today() }));
+        rerender();
+      } } }) : null;
       const meta = h("div", { class: "stage-meta" },
-        startBtn,
+        startBtn, completeBtn,
         s.start_date ? h("span", { class: "num", text: "התחיל " + fmt(s.start_date) }) : null,
         field("יעד לשלב", h("input", { type: "date", value: s.due_date || "", on: { change: async e => { await run(db.from("stages").update({ due_date: e.target.value || null }).eq("id", s.id)); s.due_date = e.target.value || null; toast("נשמר"); } } })),
         s.typical_days ? h("span", { text: `משך טיפוסי: ${s.typical_days} ימים` }) : null,
