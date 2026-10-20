@@ -231,7 +231,7 @@ function projectForm(p, all = []) {
     field("יעד לסיום", f.target_date), field("תקציב הלקוח", f.budget), field("שם התיקייה ב-MY PROJECTS\\NEW", f.folder_name, "wide"),
     field("הערות", f.notes, "wide"),
     isNew ? h("p", { class: "small muted wide", text: "השלבים והמשימות ייפתחו אוטומטית לפי סוג הפרויקט." })
-          : h("p", { class: "small muted wide", text: "שינוי סוג הפרויקט לא משנה שלבים שכבר נפתחו." }));
+          : h("p", { class: "small muted wide", text: "שינוי סוג הפרויקט לא משנה שלבים שכבר נפתחו. מחיקת פרויקט מוחקת אותו רק מהמערכת, לא מהמחשב." }));
   openPanel(isNew ? "פרויקט חדש" : "עריכת פרטי הפרויקט", body, close => [
     h("button", { class: "btn", type: "button", text: isNew ? "פתיחת הפרויקט" : "שמירה", on: { click: async () => {
       if (!f.name.value.trim()) { f.name.focus(); return; }
@@ -248,8 +248,12 @@ function projectForm(p, all = []) {
         await run(db.from("projects").update(row).eq("id", p.id));
         close(); toast("נשמר"); route();
       }
-    } } })
-  ]);
+    } } }),
+    isNew ? null : confirmButton("מחיקת הפרויקט מהמערכת", async () => {
+      await run(db.from("projects").delete().eq("id", p.id));
+      close(); toast("הפרויקט נמחק מהמערכת. התיקייה במחשב לא נגעה."); location.hash = "#/";
+    })
+  ].filter(Boolean));
 }
 
 // Project page ------------------------------------------------------------------
