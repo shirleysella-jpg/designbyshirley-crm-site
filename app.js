@@ -95,6 +95,40 @@ function markPicker(value, onChange) {
   wrap.addEventListener("keydown", e => e.stopPropagation());
   return wrap;
 }
+// Dates: typed as day/month/year (1/12/2026, 1.12.26, 1/12) or picked from a calendar
+function parseDate(s) {
+  s = (s || "").trim();
+  if (!s) return "";
+  let d, mo, y, m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) [y, mo, d] = [+m[1], +m[2], +m[3]];
+  else {
+    m = s.match(/^(\d{1,2})\s*[\/.\-\s]\s*(\d{1,2})(?:\s*[\/.\-\s]\s*(\d{2}|\d{4}))?$/);
+    if (!m) return null;
+    [d, mo] = [+m[1], +m[2]];
+    y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : new Date().getFullYear();
+  }
+  const dt = new Date(y, mo - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+const showDate = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
+function dateField(value, onChange, label) {
+  let current = value || "";
+  const text = h("input", { type: "text", class: "date-text", inputmode: "numeric", dir: "ltr", placeholder: "יום/חודש/שנה", value: showDate(current), "aria-label": label || "תאריך" });
+  const native = h("input", { type: "date", class: "date-native", tabindex: "-1", "aria-hidden": "true", value: current });
+  const btn = h("button", { type: "button", class: "date-btn", title: "בחירה מלוח שנה", "aria-label": "בחירה מלוח שנה", text: "📅" });
+  const commit = iso => { current = iso; text.value = showDate(iso); native.value = iso; text.classList.remove("invalid"); if (onChange) onChange(iso || null); };
+  text.addEventListener("change", () => {
+    const iso = parseDate(text.value);
+    if (iso === null) { text.classList.add("invalid"); toast("התאריך לא ברור. כותבים למשל 1/12/2026"); return; }
+    if (iso !== current) commit(iso); else { text.value = showDate(iso); text.classList.remove("invalid"); }
+  });
+  native.addEventListener("change", () => commit(native.value));
+  btn.addEventListener("click", () => { try { native.showPicker(); } catch { native.focus(); } });
+  const wrap = h("span", { class: "datef" }, text, btn, native);
+  Object.defineProperty(wrap, "value", { get: () => current });
+  return wrap;
+}
 function field(label, input, cls) { return h("label", { class: "field" + (cls ? " " + cls : "") }, label, input); }
 
 function openPanel(title, body, actions) {
@@ -228,9 +262,9 @@ function projectForm(p, all = []) {
     city: h("input", { type: "text", value: p.city || "" }),
     property_type: select(["", "דירה", "בית פרטי", "פנטהאוז", "דירת גן", "מסחרי"], p.property_type || ""),
     rooms: h("input", { type: "text", value: p.rooms || "", placeholder: "סלון, מטבח, 3 חדרי שינה…" }),
-    start_date: h("input", { type: "date", value: p.start_date || "" }),
-    handover_date: h("input", { type: "date", value: p.handover_date || "" }),
-    target_date: h("input", { type: "date", value: p.target_date || "" }),
+    start_date: dateField(p.start_date),
+    handover_date: dateField(p.handover_date),
+    target_date: dateField(p.target_date),
     folder_name: h("input", { type: "text", value: p.folder_name || "", placeholder: "171_Cohen Family" }),
     budget: h("input", { type: "number", value: p.budget ?? "" }),
     notes: h("textarea", { value: p.notes || "" })
@@ -331,7 +365,7 @@ function taskRow(t, opts = {}) {
     waitDays >= FOLLOW_UP_DAYS ? h("span", { class: "pill wait", text: `${waitDays} ימים בלי תשובה` }) : null,
     select(TASK_STATUSES, t.status, async v => { await updateTask(t, { status: v }); opts.onChange?.(t); }, { "aria-label": "סטטוס" }),
     markPicker(t.priority, async v => { await updateTask(t, { priority: v }); opts.onChange ? opts.onChange(t) : null; }),
-    h("input", { type: "date", value: t.due_date || "", "aria-label": "תאריך יעד", on: { change: async e => { await updateTask(t, { due_date: e.target.value || null }); opts.onChange?.(t); } } }),
+    dateField(t.due_date, async v => { await updateTask(t, { due_date: v }); opts.onChange?.(t); }, "תאריך יעד"),
     h("button", { class: "link small", type: "button", text: "עוד", on: { click: () => { extra.hidden = !extra.hidden; } } }));
   extra.append(
     h("div", { class: "row" },
@@ -403,7 +437,7 @@ function stagesTab(ctx) {
       const meta = h("div", { class: "stage-meta" },
         startBtn, completeBtn,
         s.start_date ? h("span", { class: "num", text: "התחיל " + fmt(s.start_date) }) : null,
-        field("יעד לשלב", h("input", { type: "date", value: s.due_date || "", on: { change: async e => { await run(db.from("stages").update({ due_date: e.target.value || null }).eq("id", s.id)); s.due_date = e.target.value || null; toast("נשמר"); } } })),
+        field("יעד לשלב", dateField(s.due_date, async v => { await run(db.from("stages").update({ due_date: v }).eq("id", s.id)); s.due_date = v; toast("נשמר"); }, "יעד לשלב")),
         s.typical_days ? h("span", { text: `משך טיפוסי: ${s.typical_days} ימים` }) : null,
         s.needs_approval ? h("span", { class: "pill oak", text: "נסגר באישור לקוח" }) : null,
         s.distribute_to ? h("span", { text: "נשלח ל: " + s.distribute_to }) : null);
@@ -495,6 +529,7 @@ function itemsTab(ctx) {
         calcCells.forEach(([td, cf]) => { td.textContent = calcValue(x, cf, cat.key); }); updateTotal();
       };
       if (type === "status") return h("td", {}, select(ITEM_STATUSES, x.status, save, { "aria-label": "סטטוס" }));
+      if (type === "date") return h("td", {}, dateField(x[f], v => save(v)));
       const input = h("input", { type: type === "num" ? "number" : type === "date" ? "date" : "text", step: type === "num" ? "any" : null, value: x[f] ?? "",
         "aria-label": f, on: { change: e => save(e.target.value === "" ? null : type === "num" ? Number(e.target.value) : e.target.value) } });
       if (type === "link") return h("td", { class: "linkcell" }, input, x.link ? h("a", { href: x.link, target: "_blank", rel: "noopener", text: "פתיחה" }) : null);
@@ -574,7 +609,7 @@ function paysTab(ctx) {
       text: x.remind ? "לתזכר ✓" : "לתזכר", on: { click: () => upd(x, { remind: !x.remind }) } })),
     amount: x => h("td", {}, h("input", { type: "number", value: x.amount ?? "", on: { change: e => upd(x, { amount: e.target.value === "" ? null : Number(e.target.value) }) } })),
     vat: x => h("td", { class: "num", text: x.amount == null ? "—" : money(Number(x.amount) * (1 + VAT)) }),
-    due: x => h("td", {}, h("input", { type: "date", value: x.due_date || "", "aria-label": "צפוי להיכנס", on: { change: e => upd(x, { due_date: e.target.value || null }) } })),
+    due: x => h("td", {}, dateField(x.due_date, v => upd(x, { due_date: v }), "צפוי להיכנס")),
     paid: x => h("td", {}, h("label", { class: "row paid-cell" }, h("input", { type: "checkbox", checked: !!x.paid_at, "aria-label": "שולם", on: { change: e => upd(x, e.target.checked ? { paid_at: today(), remind: false } : { paid_at: null }) } }),
       x.paid_at ? `שולם ${fmt(x.paid_at)}` : "לא שולם")),
     del: x => h("td", {}, confirmButton("מחיקה", () => run(db.from("payments").delete().eq("id", x.id)).then(refresh)))
@@ -630,7 +665,7 @@ function questionsTab({ questions, p }) {
 
 function meetingsTab({ meetings, p }) {
   const refresh = () => renderProject(p.id);
-  const date = h("input", { type: "date", value: today() });
+  const date = dateField(today(), null, "תאריך הפגישה");
   const notes = h("textarea", { placeholder: "מה סוכם בפגישה" });
   return h("div", { class: "group" },
     h("div", { class: "card" }, h("div", { class: "form-grid" }, field("תאריך", date), field("הערות", notes, "wide")),
@@ -727,7 +762,7 @@ async function renderGeneral() {
   const open = shown.filter(isOpen), closed = shown.filter(x => !isOpen(x));
   const name = h("input", { type: "text", placeholder: "משימה חדשה", "aria-label": "משימה חדשה" });
   const cat = select(CATEGORIES, state.generalFilter !== "הכול" ? state.generalFilter : "עסק", null, { "aria-label": "קטגוריה" });
-  const due = h("input", { type: "date", "aria-label": "תאריך יעד" });
+  const due = dateField("", null, "תאריך יעד");
   const add = async () => { if (!name.value.trim()) return; await run(db.from("tasks").insert({ name: name.value.trim(), category: cat.value, due_date: due.value || null })); refresh(); };
   name.addEventListener("keydown", e => { if (e.key === "Enter") add(); });
   const opts = { onChange: refresh, onDelete: refresh, rooms: false, categories: true };

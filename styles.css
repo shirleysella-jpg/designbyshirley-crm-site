@@ -150,6 +150,14 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: start; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; }
 td input[type=text], td input[type=number], td input[type=date] { width: 100%; min-width: 90px; }
+/* Date field: typed day/month/year plus a calendar button */
+.datef { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.datef .date-text { width: 112px; min-width: 112px !important; text-align: left; font-variant-numeric: tabular-nums; }
+.datef .date-text.invalid { border-color: var(--late); background: var(--late-soft); }
+.date-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 3px 6px; cursor: pointer; line-height: 1; }
+.date-btn:hover { background: var(--oak-soft); }
+.date-native { position: absolute; inset-inline-end: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+
 /* Payments */
 .pay-section { border-top-width: 6px; }
 .pay-section.fees { border-top-color: var(--oak); }
