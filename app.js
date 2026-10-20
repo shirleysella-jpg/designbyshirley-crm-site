@@ -567,34 +567,42 @@ function paysTab(ctx) {
       h("div", {}, h("span", { class: "small muted", text: "יתרה, לפני מע\"מ" }), h("b", { text: money(total - paid) })),
       h("div", {}, h("span", { class: "small muted", text: "יתרה כולל מע\"מ" }), h("b", { text: money((total - paid) * (1 + VAT)) })));
   };
+  const rowClass = x => "pay-row" + (x.paid_at ? " is-paid" : x.remind ? " is-remind" : "");
   const cells = {
-    text: (x, f, ph, fallback) => h("td", {}, h("input", { type: "text", value: x[f] || "", placeholder: ph || "", on: { change: e => upd(x, { [f]: e.target.value || fallback || null }) } })),
+    text: (x, f, ph, fallback, cls) => h("td", {}, h("input", { type: "text", class: cls || null, value: x[f] || "", placeholder: ph || "", on: { change: e => upd(x, { [f]: e.target.value || fallback || null }) } })),
+    remind: x => h("td", {}, x.paid_at ? null : h("button", { type: "button", class: "remind-btn", "aria-pressed": String(!!x.remind), title: "לסמן שצריך להזכיר לשלם",
+      text: x.remind ? "לתזכר ✓" : "לתזכר", on: { click: () => upd(x, { remind: !x.remind }) } })),
     amount: x => h("td", {}, h("input", { type: "number", value: x.amount ?? "", on: { change: e => upd(x, { amount: e.target.value === "" ? null : Number(e.target.value) }) } })),
     vat: x => h("td", { class: "num", text: x.amount == null ? "—" : money(Number(x.amount) * (1 + VAT)) }),
     due: x => h("td", {}, h("input", { type: "date", value: x.due_date || "", "aria-label": "צפוי להיכנס", on: { change: e => upd(x, { due_date: e.target.value || null }) } })),
-    paid: x => h("td", {}, h("label", { class: "row" }, h("input", { type: "checkbox", checked: !!x.paid_at, "aria-label": "שולם", on: { change: e => upd(x, { paid_at: e.target.checked ? today() : null }) } }), x.paid_at ? fmt(x.paid_at) : "")),
+    paid: x => h("td", {}, h("label", { class: "row paid-cell" }, h("input", { type: "checkbox", checked: !!x.paid_at, "aria-label": "שולם", on: { change: e => upd(x, e.target.checked ? { paid_at: today(), remind: false } : { paid_at: null }) } }),
+      x.paid_at ? `שולם ${fmt(x.paid_at)}` : "לא שולם")),
     del: x => h("td", {}, confirmButton("מחיקה", () => run(db.from("payments").delete().eq("id", x.id)).then(refresh)))
   };
 
   return h("div", { class: "group" },
-    h("section", { class: "card" },
-      h("h3", { text: "שכר טרחה" }),
+    h("div", { class: "legend-row small" },
+      h("span", { class: "swatch is-paid" }), "שולם",
+      h("span", { class: "swatch is-remind" }), "צריך להזכיר לשלם",
+      h("span", { class: "swatch" }), "עוד לא שולם"),
+    h("section", { class: "card pay-section fees" },
+      h("h3", { class: "pay-title", text: "שכר טרחה" }),
       totals(fees, ["שכר טרחה, לפני מע\"מ"]),
-      fees.length ? h("div", { class: "tablewrap" }, h("table", {},
-        h("thead", {}, h("tr", {}, ["שלב תשלום", "סכום לפני מע\"מ", "כולל מע\"מ", "מתי", "צפוי להיכנס", "שולם", ""].map(t => h("th", { text: t })))),
-        h("tbody", {}, fees.map(x => h("tr", {}, cells.text(x, "name", "", "תשלום"), cells.amount(x), cells.vat(x),
-          cells.text(x, "trigger_note", "למשל: בתחילת שלב הליווי"), cells.due(x), cells.paid(x), cells.del(x))))))
+      fees.length ? h("div", { class: "tablewrap" }, h("table", { class: "pays" },
+        h("thead", {}, h("tr", {}, ["שלב תשלום", "סכום לפני מע\"מ", "כולל מע\"מ", "מתי", "צפוי להיכנס", "סטטוס", "תזכורת", ""].map(t => h("th", { text: t })))),
+        h("tbody", {}, fees.map(x => h("tr", { class: rowClass(x) }, cells.text(x, "name", "", "תשלום"), cells.amount(x), cells.vat(x),
+          cells.text(x, "trigger_note", "למשל: בתחילת שלב הליווי"), cells.due(x), cells.paid(x), cells.remind(x), cells.del(x))))))
         : h("div", { class: "empty" }, "עוד אין שלבי תשלום. הוסיפי אותם לפי הצעת המחיר."),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שלב תשלום", on: { click: async () => {
         await run(db.from("payments").insert({ project_id: p.id, kind: "fee", name: `תשלום ${fees.length + 1}`, position: fees.length + 1 })); refresh();
       } } }))),
-    h("section", { class: "card" },
-      h("h3", { text: "עמלות ספקים" }),
+    h("section", { class: "card pay-section coms" },
+      h("h3", { class: "pay-title", text: "עמלות ספקים" }),
       totals(coms, ["עמלות, לפני מע\"מ"]),
-      coms.length ? h("div", { class: "tablewrap" }, h("table", {},
-        h("thead", {}, h("tr", {}, ["ספק", "על מה", "סכום לפני מע\"מ", "כולל מע\"מ", "צפוי להיכנס", "שולם", "הערות", ""].map(t => h("th", { text: t })))),
-        h("tbody", {}, coms.map(x => h("tr", {}, cells.text(x, "supplier", "שם הספק"), cells.text(x, "name", "ארונות, ספה, סניטריה…", "עמלה"), cells.amount(x), cells.vat(x),
-          cells.due(x), cells.paid(x), cells.text(x, "trigger_note", "למשל: אחרי האספקה"), cells.del(x))))))
+      coms.length ? h("div", { class: "tablewrap" }, h("table", { class: "pays" },
+        h("thead", {}, h("tr", {}, ["ספק", "מה נקנה", "סכום לפני מע\"מ", "כולל מע\"מ", "צפוי להיכנס", "סטטוס", "תזכורת", "הערות", ""].map(t => h("th", { text: t })))),
+        h("tbody", {}, coms.map(x => h("tr", { class: rowClass(x) }, cells.text(x, "supplier", "שם הספק (חסר)", null, "supplier-input"), cells.text(x, "name", "ארונות, ספה, סניטריה…", "עמלה"), cells.amount(x), cells.vat(x),
+          cells.due(x), cells.paid(x), cells.remind(x), cells.text(x, "trigger_note", "למשל: אחרי האספקה"), cells.del(x))))))
         : h("div", { class: "empty" }, "עוד אין עמלות ספקים בפרויקט."),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת עמלה", on: { click: async () => {
         await run(db.from("payments").insert({ project_id: p.id, kind: "commission", name: "עמלה", position: 100 + coms.length + 1 })); refresh();
@@ -674,11 +682,13 @@ function folderTab({ p }) {
 // Today & this week -------------------------------------------------------------
 async function renderToday() {
   const t = today(), week = addDays(t, 7);
-  const [tasks, pays, deliveries] = await Promise.all([
+  const [tasks, pays, deliveries, reminders] = await Promise.all([
     run(db.from("tasks").select("*, projects(id, name, number)").not("status", "in", "(\"הושלם\",\"לא רלוונטי\")").order("due_date", { nullsFirst: false })),
     run(db.from("payments").select("*, projects(id, name, number)").is("paid_at", null).not("due_date", "is", null).lte("due_date", week).order("due_date")),
-    run(db.from("items").select("*, projects(id, name, number)").in("status", ["נבחר", "הוזמן"]).not("delivery_date", "is", null).lte("delivery_date", week).order("delivery_date"))
+    run(db.from("items").select("*, projects(id, name, number)").in("status", ["נבחר", "הוזמן"]).not("delivery_date", "is", null).lte("delivery_date", week).order("delivery_date")),
+    run(db.from("payments").select("*, projects(id, name, number)").eq("remind", true).is("paid_at", null).order("due_date", { nullsFirst: false }))
   ]);
+  const payLabel = x => x.kind === "commission" ? `עמלה: ${[x.supplier, x.name].filter(Boolean).join(" · ")}` : x.name;
   const label = x => x.projects ? h("a", { href: `#/p/${x.projects.id}`, text: `${x.projects.number ? x.projects.number + " · " : ""}${x.projects.name}` }) : "משימה כללית";
   const refresh = () => renderToday();
   const rows = list => h("div", { class: "card tasks" }, list.map(x => taskRow(x, { projectLabel: label(x), onChange: refresh, onDelete: refresh, rooms: false })));
@@ -690,6 +700,10 @@ async function renderToday() {
     list.length ? rows(list) : h("p", { class: "muted small", text: "אין." }));
   paint("today",
     h("div", { class: "page-head" }, h("div", {}, h("h1", { text: "היום והשבוע" }), h("p", { class: "sub num", text: new Date().toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }) }))),
+    reminders.length ? h("section", { class: "group" }, h("h2", {}, "לתזכר לשלם", h("span", { class: "pill", style: "background:var(--remind-soft);color:var(--remind)", text: String(reminders.length) })),
+      h("div", { class: "card tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, reminders.map(x => h("tr", { class: "pay-row is-remind" },
+        h("td", {}, label(x)), h("td", { text: payLabel(x) }), h("td", { class: "num", text: money(x.amount) }),
+        h("td", { class: "num", text: x.due_date ? fmt(x.due_date) : "" }))))))) : null,
     late.length ? section("באיחור", late, "late") : null,
     section("להיום", now),
     section("השבוע", soon),

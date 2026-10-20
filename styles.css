@@ -16,6 +16,8 @@
   --done-soft: #E3EEE5;
   --wait: #8A6A2C;
   --wait-soft: #F4ECDA;
+  --remind: #C9711C;
+  --remind-soft: #FBE4C9;
   --mark-red: #C8442F;
   --mark-orange: #E08A2E;
   --mark-green: #5E9A62;
@@ -148,6 +150,30 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: start; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; }
 td input[type=text], td input[type=number], td input[type=date] { width: 100%; min-width: 90px; }
+/* Payments */
+.pay-section { border-top-width: 6px; }
+.pay-section.fees { border-top-color: var(--oak); }
+.pay-section.coms { border-top-color: var(--smoke); background: #FBFBF9; }
+.pay-title { font-size: 22px; }
+.pay-section.fees .pay-title { color: var(--oak); }
+.pay-section.coms .pay-title { color: var(--smoke); }
+table.pays td { padding: 5px 6px; }
+table.pays input[type=text] { min-width: 110px; }
+table.pays input[type=number] { width: 95px; min-width: 80px; }
+tr.pay-row.is-paid td { background: var(--done-soft); }
+tr.pay-row.is-paid .paid-cell { color: var(--done); font-weight: 700; }
+tr.pay-row.is-remind td { background: var(--remind-soft); }
+tr.pay-row.is-remind .paid-cell { color: var(--remind); font-weight: 700; }
+.paid-cell { white-space: nowrap; }
+.supplier-input { font-weight: 700; min-width: 140px !important; }
+.supplier-input:placeholder-shown { border-color: var(--late); }
+.remind-btn { border: 1px solid var(--remind); background: var(--surface); color: var(--remind); border-radius: 999px; padding: 2px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.remind-btn[aria-pressed="true"] { background: var(--remind); color: #fff; font-weight: 700; }
+.legend-row { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; color: var(--muted); }
+.swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--line); background: var(--surface); display: inline-block; }
+.swatch.is-paid { background: var(--done-soft); border-color: var(--done); }
+.swatch.is-remind { background: var(--remind-soft); border-color: var(--remind); }
+
 table.items td { padding: 4px 4px; }
 table.items td input[type=text] { min-width: 120px; }
 table.items td input[type=number] { min-width: 70px; width: 80px; }
