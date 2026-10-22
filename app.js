@@ -566,22 +566,32 @@ function itemsTab(ctx) {
     await Promise.all(changed.map(([x, pos]) => run(db.from("items").update({ position: pos }).eq("id", x.id))));
     toast("הסדר נשמר");
   };
+  // The row moves only on release: moving it mid-drag detaches the handle and the browser drops the drag.
   const startDrag = (e, tr) => {
+    if (e.button !== 0) return;
     e.preventDefault();
-    const handle = e.currentTarget;
-    handle.setPointerCapture(e.pointerId);
-    tr.classList.add("dragging");
+    let target = null, after = false;
+    const clear = () => tbody.querySelectorAll(".drop-before, .drop-after").forEach(r => r.classList.remove("drop-before", "drop-after"));
+    tr.classList.add("dragging"); document.body.classList.add("is-dragging");
     const move = ev => {
-      const over = [...tbody.children].find(r => r !== tr && (() => { const b = r.getBoundingClientRect(); return ev.clientY >= b.top && ev.clientY <= b.bottom; })());
-      if (!over) return;
-      const b = over.getBoundingClientRect();
-      if (ev.clientY < b.top + b.height / 2) over.before(tr); else over.after(tr);
+      ev.preventDefault();
+      const rowsNow = [...tbody.children].filter(r => r !== tr);
+      if (!rowsNow.length) return;
+      const first = rowsNow[0].getBoundingClientRect(), last = rowsNow.at(-1).getBoundingClientRect();
+      const y = Math.min(Math.max(ev.clientY, first.top + 1), last.bottom - 1);
+      target = rowsNow.find(r => { const b = r.getBoundingClientRect(); return y >= b.top && y <= b.bottom; }) || null;
+      clear();
+      if (!target) return;
+      const b = target.getBoundingClientRect();
+      after = y >= b.top + b.height / 2;
+      target.classList.add(after ? "drop-after" : "drop-before");
     };
-    const end = () => {
-      handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
-      tr.classList.remove("dragging"); saveOrder();
+    const end = ev => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end);
+      clear(); tr.classList.remove("dragging"); document.body.classList.remove("is-dragging");
+      if (ev.type === "pointerup" && target) { if (after) target.after(tr); else target.before(tr); saveOrder(); }
     };
-    handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
+    window.addEventListener("pointermove", move, { passive: false }); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
   };
 
   // One supplier for the whole list (lighting): set in the header and copied to every row
