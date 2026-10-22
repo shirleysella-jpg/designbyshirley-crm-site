@@ -492,19 +492,19 @@ function changePanel(ctx) {
 const ITEM_STATUSES = ["לבחירה", "נבחר", "הוזמן", "סופק", "הותקן"];
 // Column sets per category. "calc" columns are computed, never stored.
 const C = {
-  room: ["room", "חדר / אזור"], supplier: ["supplier", "ספק"], qty: ["quantity", "כמות", "num"], price: ["unit_price", "מחיר ליח'", "num"],
+  room: ["room", "חדר"], area: ["area", "אזור"], supplier: ["supplier", "ספק"], qty: ["quantity", "כמות", "num"], price: ["unit_price", "מחיר ליח'", "num"],
   status: ["status", "סטטוס", "status"], link: ["link", "קישור", "link"], notes: ["notes", "הערות"], total: ["_total", "סה\"כ", "calc"],
   delivery: ["delivery_date", "אספקה", "date"]
 };
 const ITEM_CATEGORIES = [
-  { key: "tiles", label: "ריצוף וחיפוי", cols: [C.room, ["name", "שימוש (רצפה / קיר / חיפוי)"], ["model", "מוצר / דגם"], C.supplier, ["size", "מידת אריח"], ["color", "גוון / גימור"],
+  { key: "tiles", label: "ריצוף וחיפוי", cols: [C.room, C.area, ["name", "שימוש (רצפה / קיר / חיפוי)"], ["model", "מוצר / דגם"], C.supplier, ["size", "מידת אריח"], ["color", "גוון / גימור"],
     ["quantity", "מ\"ר נטו", "num"], ["waste_pct", "% פחת", "num"], ["_order", "מ\"ר להזמנה", "calc"], ["unit_price", "מחיר למ\"ר", "num"], C.total, C.status, C.notes] },
-  { key: "sanitary", label: "כלים סניטריים וארונות רחצה", cols: [C.room, ["name", "פריט"], ["model", "דגם / מק\"ט"], C.supplier, ["color", "גימור / גוון"], ["size", "מידה"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
-  { key: "lighting", label: "גופי תאורה", headerSupplier: true, cols: [["room", "חדר"], ["area", "אזור"], ["name", "סוג הגוף"], ["model", "דגם"], ["color", "גוון הגוף"], ["size", "מידה / גוון אור"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
-  { key: "colors", label: "גוונים לקירות", cols: [C.room, ["name", "קיר / מיקום"], ["model", "קוד גוון"], ["color", "שם הגוון"], ["supplier", "חברה"], ["size", "סוג צבע / גמר"], C.notes] },
-  { key: "carpentry", label: "נגרות", cols: [["model", "סימון"], C.room, ["name", "תיאור"], ["color", "חזית וגוון"], ["size", "מידות"], ["supplier", "נגר"], C.qty, C.price, C.total, C.status, C.notes] },
-  { key: "furniture", label: "ריהוט", cols: [C.room, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "בד / גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
-  { key: "decor", label: "טקסטיל ואקססוריז", cols: [C.room, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
+  { key: "sanitary", label: "כלים סניטריים וארונות רחצה", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם / מק\"ט"], C.supplier, ["color", "גימור / גוון"], ["size", "מידה"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
+  { key: "lighting", label: "גופי תאורה", headerSupplier: true, cols: [C.room, C.area, ["name", "סוג הגוף"], ["model", "דגם"], ["color", "גוון הגוף"], ["size", "מידה / גוון אור"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
+  { key: "colors", label: "גוונים לקירות", cols: [C.room, C.area, ["name", "קיר"], ["model", "קוד גוון"], ["color", "שם הגוון"], ["supplier", "חברה"], ["size", "סוג צבע / גמר"], C.notes] },
+  { key: "carpentry", label: "נגרות", cols: [["model", "סימון"], C.room, C.area, ["name", "תיאור"], ["color", "חזית וגוון"], ["size", "מידות"], ["supplier", "נגר"], C.qty, C.price, C.total, C.status, C.notes] },
+  { key: "furniture", label: "ריהוט", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "בד / גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
+  { key: "decor", label: "טקסטיל ואקססוריז", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
   { key: "kitchen", label: "נלווים למטבח", cols: [["name", "פריט (משטח, כיור, ברז, מכשיר)"], ["model", "דגם"], C.supplier, ["size", "מידה"], ["color", "גוון / גימור"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] }
 ];
 // Rounded up to 2 decimals; the inner round strips float noise (39 × 1.1 = 42.900000000000006)
@@ -637,9 +637,9 @@ function clientView(p, cat, list) {
   if (!win) { toast("הדפדפן חסם את החלון. צריך לאפשר חלונות קופצים לאתר."); return; }
   const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const show = (x, f, type) => type === "calc" ? (f === "_order" ? (orderQty(x) ?? "") : (itemTotal(x, cat.key) == null ? "" : money(itemTotal(x, cat.key))))
-    : f === "unit_price" ? (x[f] == null ? "" : money(x[f])) : x[f] ?? "";
+    : f === "unit_price" ? (x[f] == null ? "" : money(x[f])) : type === "date" ? fmt(x[f]) : x[f] ?? "";
   const priceCols = ["unit_price", "_total"];
-  const cols = cat.cols.filter(([f]) => !["status", "notes", "link", "room", "supplier", "waste_pct"].includes(f));
+  const cols = cat.cols.filter(([f]) => !["status", "notes", "link", "room", "waste_pct"].includes(f) && !(f === "supplier" && cat.headerSupplier));
   const hasLinks = list.some(x => x.link);
   const groups = [];
   for (const x of list) {
@@ -651,7 +651,8 @@ function clientView(p, cat, list) {
   const supplier = cat.headerSupplier ? (p.item_suppliers || {})[cat.key] : null;
   const head = cols.map(([f, label]) => `<th class="${priceCols.includes(f) ? "price" : ""}">${esc(label)}</th>`).join("")
     + `<th class="note">הערות</th>` + (hasLinks ? "<th></th>" : "");
-  const body = groups.map(g => `<tbody><tr class="room"><td colspan="${cols.length + 1 + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`
+  const oneGroup = groups.length === 1 && groups[0].room === "כללי";
+  const body = groups.map(g => `<tbody>${oneGroup ? "" : `<tr class="room"><td colspan="${cols.length + 1 + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`}`
     + g.items.map(x => "<tr>" + cols.map(([f, , type]) => `<td class="${priceCols.includes(f) ? "price " : ""}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
       + `<td class="note">${esc(x.notes)}</td>` + (hasLinks ? `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">לצפייה</a>` : ""}</td>` : "") + "</tr>").join("")
     + "</tbody>").join("");
