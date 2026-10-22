@@ -526,7 +526,17 @@ function itemsTab(ctx) {
 
   const row = x => {
     const calcCells = [];
-    const tr = h("tr", {}, cat.cols.map(([f, , type]) => {
+    const handle = h("button", { class: "drag-handle", type: "button", title: "גרירה לשינוי הסדר", "aria-label": "גרירה לשינוי הסדר (או חצים למעלה ולמטה)", text: "⠿" });
+    handle.addEventListener("pointerdown", e => startDrag(e, tr));
+    handle.addEventListener("keydown", e => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const sib = e.key === "ArrowUp" ? tr.previousElementSibling : tr.nextElementSibling;
+      if (!sib) return;
+      if (e.key === "ArrowUp") sib.before(tr); else sib.after(tr);
+      handle.focus(); saveOrder();
+    });
+    const tr = h("tr", {}, h("td", { class: "drag" }, handle), cat.cols.map(([f, , type]) => {
       if (type === "calc") { const td = h("td", { class: "num", text: calcValue(x, f, cat.key) }); calcCells.push([td, f]); return td; }
       const save = async v => {
         const patch = { [f]: v };
@@ -540,8 +550,38 @@ function itemsTab(ctx) {
         "aria-label": f, on: { change: e => save(e.target.value === "" ? null : type === "num" ? Number(e.target.value) : e.target.value) } });
       if (type === "link") return h("td", { class: "linkcell" }, input, x.link ? h("a", { href: x.link, target: "_blank", rel: "noopener", text: "פתיחה" }) : null);
       return h("td", {}, input);
-    }), h("td", {}, confirmButton("מחיקה", async () => { await run(db.from("items").delete().eq("id", x.id)); tr.remove(); ctx.items.splice(ctx.items.indexOf(x), 1); list.splice(list.indexOf(x), 1); updateTotal(); })));
+    }), h("td", {}, confirmButton("מחיקה", async () => { await run(db.from("items").delete().eq("id", x.id)); tr.remove(); rowItem.delete(tr); ctx.items.splice(ctx.items.indexOf(x), 1); list.splice(list.indexOf(x), 1); updateTotal(); })));
+    rowItem.set(tr, x);
     return tr;
+  };
+
+  // Drag a row by its handle (mouse or finger); the new order is saved as positions 1..n
+  const rowItem = new Map();
+  const saveOrder = async () => {
+    const ordered = [...tbody.children].map(r => rowItem.get(r)).filter(Boolean);
+    const changed = ordered.map((x, i) => [x, i + 1]).filter(([x, pos]) => x.position !== pos);
+    list.splice(0, list.length, ...ordered);
+    if (!changed.length) return;
+    changed.forEach(([x, pos]) => { x.position = pos; });
+    await Promise.all(changed.map(([x, pos]) => run(db.from("items").update({ position: pos }).eq("id", x.id))));
+    toast("הסדר נשמר");
+  };
+  const startDrag = (e, tr) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    tr.classList.add("dragging");
+    const move = ev => {
+      const over = [...tbody.children].find(r => r !== tr && (() => { const b = r.getBoundingClientRect(); return ev.clientY >= b.top && ev.clientY <= b.bottom; })());
+      if (!over) return;
+      const b = over.getBoundingClientRect();
+      if (ev.clientY < b.top + b.height / 2) over.before(tr); else over.after(tr);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
+      tr.classList.remove("dragging"); saveOrder();
+    };
+    handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
   };
 
   // One supplier for the whole list (lighting): set in the header and copied to every row
@@ -574,7 +614,7 @@ function itemsTab(ctx) {
         h("button", { class: "btn small ghost", type: "button", text: "ייצוא לאקסל", on: { click: () => exportItems(p, items) } })),
       cat.key === "tiles" ? h("p", { class: "small muted", text: "מ\"ר להזמנה מחושב מהמ\"ר נטו ועוד אחוז הפחת (ברירת מחדל 10%, אפשר לשנות בכל שורה)." }) : null,
       h("div", { class: "tablewrap" }, h("table", { class: "items" },
-        h("thead", {}, h("tr", {}, cat.cols.map(([, label]) => h("th", { text: label })), h("th", {}))), tbody)),
+        h("thead", {}, h("tr", {}, h("th", {}), cat.cols.map(([, label]) => h("th", { text: label })), h("th", {}))), tbody)),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שורה", on: { click: addRow } }))),
     quotesCard(ctx, cat));
 }

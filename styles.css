@@ -229,3 +229,9 @@ table.income td.expected { color: var(--remind); }
 .carry { color: var(--late); font-weight: 600; }
 .head-supplier { gap: 6px; color: var(--muted); }
 .head-supplier input { width: 180px; }
+/* Reordering item rows */
+td.drag { width: 28px; padding-inline: 2px; }
+.drag-handle { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 6px; cursor: grab; touch-action: none; border-radius: 6px; }
+.drag-handle:hover, .drag-handle:focus-visible { background: var(--oak-soft); color: var(--oak); }
+tr.dragging { background: var(--oak-soft); outline: 1px solid var(--oak); }
+tr.dragging .drag-handle { cursor: grabbing; }
