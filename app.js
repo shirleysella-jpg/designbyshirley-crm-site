@@ -728,8 +728,9 @@ async function renderToday() {
     run(db.from("items").select("*, projects(id, name, number)").in("status", ["נבחר", "הוזמן"]).not("delivery_date", "is", null).lte("delivery_date", week).order("delivery_date")),
     run(db.from("payments").select("*, projects(id, name, number)").eq("remind", true).is("paid_at", null).order("due_date", { nullsFirst: false }))
   ]);
-  const payLabel = x => x.kind === "commission" ? `עמלה: ${[x.supplier, x.name].filter(Boolean).join(" · ")}` : x.name;
+  const payLabel = x => x.kind === "commission" ? `עמלה: ${[x.supplier, x.name].filter(Boolean).join(" · ")}` : [x.payer, x.name].filter(Boolean).join(" · ");
   const label = x => x.projects ? h("a", { href: `#/p/${x.projects.id}`, text: `${x.projects.number ? x.projects.number + " · " : ""}${x.projects.name}` }) : "משימה כללית";
+  const payWhere = x => x.projects ? label(x) : "בלי פרויקט";
   const refresh = () => renderToday();
   const rows = list => h("div", { class: "card tasks" }, list.map(x => taskRow(x, { projectLabel: label(x), onChange: refresh, onDelete: refresh, rooms: false })));
   const late = tasks.filter(x => x.due_date && x.due_date < t);
@@ -742,7 +743,7 @@ async function renderToday() {
     h("div", { class: "page-head" }, h("div", {}, h("h1", { text: "היום והשבוע" }), h("p", { class: "sub num", text: new Date().toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }) }))),
     reminders.length ? h("section", { class: "group" }, h("h2", {}, "לתזכר לשלם", h("span", { class: "pill", style: "background:var(--remind-soft);color:var(--remind)", text: String(reminders.length) })),
       h("div", { class: "card tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, reminders.map(x => h("tr", { class: "pay-row is-remind" },
-        h("td", {}, label(x)), h("td", { text: payLabel(x) }), h("td", { class: "num", text: money(x.amount) }),
+        h("td", {}, payWhere(x)), h("td", { text: payLabel(x) }), h("td", { class: "num", text: money(x.amount) }),
         h("td", { class: "num", text: x.due_date ? fmt(x.due_date) : "" }))))))) : null,
     late.length ? section("באיחור", late, "late") : null,
     section("להיום", now),
@@ -750,7 +751,7 @@ async function renderToday() {
     section("ממתין לאחרים", waiting, "wait"),
     pays.length ? h("section", { class: "group" }, h("h2", {}, "תשלומים לגבות", h("span", { class: "pill oak", text: String(pays.length) })),
       h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, pays.map(x => h("tr", {},
-        h("td", {}, label(x)), h("td", { text: x.kind === "commission" ? `עמלה: ${[x.supplier, x.name].filter(Boolean).join(" · ")}` : x.name }), h("td", { class: "num", text: money(x.amount) }),
+        h("td", {}, payWhere(x)), h("td", { text: payLabel(x) }), h("td", { class: "num", text: money(x.amount) }),
         h("td", { class: "num", text: fmt(x.due_date) + (x.due_date < t ? " · באיחור" : "") }))))))) : null,
     deliveries.length ? h("section", { class: "group" }, h("h2", {}, "אספקות השבוע", h("span", { class: "pill oak", text: String(deliveries.length) })),
       h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, deliveries.map(x => h("tr", {},
@@ -789,14 +790,16 @@ async function renderIncome() {
   const now = new Date();
   const thisYear = now.getFullYear(), thisMonth = now.getMonth() + 1;
   const year = state.incomeYear || thisYear;
-  const [hist, paid, open, years] = await Promise.all([
+  const [hist, paid, open, years, projects] = await Promise.all([
     run(db.from("income_months").select("*").eq("year", year)),
     run(db.from("payments").select("*, projects(name, number)").not("paid_at", "is", null).gte("paid_at", LIVE_FROM).gte("paid_at", `${year}-01-01`).lte("paid_at", `${year}-12-31`)),
     run(db.from("payments").select("*, projects(name, number)").is("paid_at", null)),
-    run(db.from("income_months").select("year"))
+    run(db.from("income_months").select("year")),
+    run(db.from("projects").select("id, number, name").order("number", { ascending: false, nullsFirst: false }))
   ]);
   const yearList = [...new Set([...years.map(r => r.year), thisYear])].sort((a, b) => b - a);
-  const who = x => x.kind === "commission" ? (x.supplier || x.name) : (x.projects ? x.projects.name : x.name);
+  const who = x => x.kind === "commission" ? (x.supplier || x.payer || x.name) : (x.projects ? x.projects.name : (x.payer || x.name));
+  const refresh = () => renderIncome();
   const gross = n => Number(n || 0) * (1 + VAT);
   const add = (a, b) => (a == null && !b) ? a : Number(a || 0) + Number(b || 0);
   const joinFrom = (a, list) => [a, ...list].filter(Boolean).join(" + ");
@@ -806,8 +809,9 @@ async function renderIncome() {
     const inMonth = paid.filter(x => Number(x.paid_at.slice(5, 7)) === m);
     const fees = inMonth.filter(x => x.kind !== "commission"), coms = inMonth.filter(x => x.kind === "commission");
     const feeNet = fees.reduce((a, x) => a + Number(x.amount || 0), 0), comNet = coms.reduce((a, x) => a + Number(x.amount || 0), 0);
+    const expected = open.filter(x => x.due_date && x.due_date.slice(0, 7) === `${year}-${String(m).padStart(2, "0")}`);
     return {
-      m, name,
+      m, name, exp_net: expected.reduce((a, x) => a + Number(x.amount || 0), 0), exp_from: expected.map(who).join(" + "),
       fees_gross: add(hRow.fees_gross, gross(feeNet)), fees_net: add(hRow.fees_net, feeNet), fees_from: joinFrom(hRow.fees_from, fees.map(who)),
       com_gross: add(hRow.com_gross, gross(comNet)), com_net: add(hRow.com_net, comNet), com_from: joinFrom(hRow.com_from, coms.map(who)),
       misc: hRow.misc, total_gross: add(hRow.total_gross, gross(feeNet + comNet)), total_net: add(hRow.total_net, feeNet + comNet), notes: hRow.notes
@@ -831,8 +835,41 @@ async function renderIncome() {
     list.length ? h("div", { class: "tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, list.map(x => h("tr", { class: "pay-row" + (x.remind ? " is-remind" : "") },
       h("td", { text: who(x) }), h("td", { class: "small muted", text: x.kind === "commission" ? `עמלה · ${x.name}` : `שכר טרחה · ${x.name}` }),
       h("td", { class: "num", text: money(x.amount) }), h("td", { class: "num", text: x.due_date ? fmt(x.due_date) : "" }),
-      h("td", {}, x.projects ? h("a", { href: `#/p/${x.project_id}`, text: x.projects.number || "" }) : null))))))
+      h("td", {}, x.projects ? h("a", { href: `#/p/${x.project_id}`, text: `פרויקט ${x.projects.number || ""}`.trim() }) : h("span", { class: "small muted", text: "בלי פרויקט" })),
+      h("td", {}, h("label", { class: "row paid-cell" }, h("input", { type: "checkbox", "aria-label": "שולם", on: { change: async () => {
+        await run(db.from("payments").update({ paid_at: today(), remind: false }).eq("id", x.id)); toast("סומן כשולם"); refresh();
+      } } }), "שולם")),
+      h("td", {}, confirmButton("מחיקה", async () => { await run(db.from("payments").delete().eq("id", x.id)); toast("נמחק"); refresh(); })))))))
       : h("p", { class: "muted small", text: "אין תשלומים עם תאריך צפוי בתקופה הזאת." }));
+
+  // Add an expected payment, with or without a project
+  const f = {
+    project: select([["", "בלי פרויקט"], ...projects.map(pr => [String(pr.id), `${pr.number ? pr.number + " · " : ""}${pr.name}`])], "", null, { "aria-label": "פרויקט" }),
+    kind: select([["fee", "שכר טרחה"], ["commission", "עמלת ספק"]], "fee", null, { "aria-label": "סוג" }),
+    from: h("input", { type: "text", placeholder: "ממי (לקוח או ספק)" }),
+    what: h("input", { type: "text", placeholder: "על מה (תשלום 2, ארונות…)" }),
+    amount: h("input", { type: "number", placeholder: "סכום לפני מע\"מ" }),
+    due: dateField("", null, "צפוי להיכנס")
+  };
+  const addExpected = async () => {
+    const amount = f.amount.value === "" ? null : Number(f.amount.value);
+    if (!f.due.value) { toast("צריך תאריך צפוי להיכנס"); return; }
+    if (amount == null) { f.amount.focus(); return; }
+    const isCom = f.kind.value === "commission";
+    await run(db.from("payments").insert({
+      project_id: f.project.value ? Number(f.project.value) : null, kind: f.kind.value, position: 200,
+      name: f.what.value.trim() || (isCom ? "עמלה" : "שכר טרחה"),
+      supplier: isCom ? (f.from.value.trim() || null) : null,
+      payer: !isCom ? (f.from.value.trim() || null) : null,
+      amount, due_date: f.due.value
+    }));
+    toast("התשלום הצפוי נוסף"); refresh();
+  };
+  const addCard = h("section", { class: "card" },
+    h("h3", { text: "הוספת תשלום צפוי" }),
+    h("div", { class: "addline wrap" }, f.project, f.kind, f.from, f.what, f.amount, f.due,
+      h("button", { class: "btn small", type: "button", text: "הוספה", on: { click: addExpected } })),
+    h("p", { class: "small muted", text: "תשלום שמשייכים לפרויקט יופיע גם בלשונית התשלומים של הפרויקט." }));
 
   paint("income",
     h("div", { class: "page-head" },
@@ -844,17 +881,20 @@ async function renderIncome() {
       expectCard(`צפוי להיכנס עוד ${MONTHS[thisMonth - 1]}`, thisList),
       expectCard(`מי צפוי לשלם ב${MONTHS[nextM - 1]}`, nextList),
       noDate.length ? h("p", { class: "small muted" }, `${noDate.length} תשלומים פתוחים עם סכום בלי תאריך "צפוי להיכנס". אפשר להוסיף תאריך בלשונית התשלומים של כל פרויקט.`) : null) : null,
+    addCard,
     h("section", { class: "card" },
       h("h3", { text: `${year} לפי חודשים` }),
       h("div", { class: "tablewrap" }, h("table", { class: "income" },
-        h("thead", {}, h("tr", {}, ["חודש", "שכר טרחה", "שכ\"ט נטו", "ממי שכ\"ט", "עמלות", "עמלות נטו", "ממי העמלות", "שונות", "סה\"כ", "סה\"כ נטו"].map(t => h("th", { text: t })))),
+        h("thead", {}, h("tr", {}, ["חודש", "שכר טרחה", "שכ\"ט נטו", "ממי שכ\"ט", "עמלות", "עמלות נטו", "ממי העמלות", "שונות", "סה\"כ", "סה\"כ נטו", "עוד צפוי (נטו)", "ממי צפוי"].map(t => h("th", { text: t })))),
         h("tbody", {}, rows.map(r => h("tr", { class: year === thisYear && r.m === thisMonth ? "current-month" : null },
           h("td", {}, h("b", { text: r.name }), r.notes ? h("div", { class: "small muted", text: r.notes }) : null),
           cell(r.fees_gross), cell(r.fees_net), h("td", { class: "small from", text: r.fees_from || "" }),
           cell(r.com_gross), cell(r.com_net), h("td", { class: "small from", text: r.com_from || "" }),
-          cell(r.misc), cell(r.total_gross), h("td", { class: "num" }, h("b", { text: r.total_net ? money(r.total_net) : "—" }))))),
+          cell(r.misc), cell(r.total_gross), h("td", { class: "num" }, h("b", { text: r.total_net ? money(r.total_net) : "—" })),
+          h("td", { class: "num expected", text: r.exp_net ? money(r.exp_net) : "—" }), h("td", { class: "small from", text: r.exp_from || "" })))),
         h("tfoot", {}, h("tr", {}, h("td", {}, h("b", { text: "סה\"כ שנתי" })), cell(sum("fees_gross")), cell(sum("fees_net")), h("td", {}),
-          cell(sum("com_gross")), cell(sum("com_net")), h("td", {}), cell(sum("misc")), cell(sum("total_gross")), h("td", { class: "num" }, h("b", { text: money(sum("total_net")) })))))),
+          cell(sum("com_gross")), cell(sum("com_net")), h("td", {}), cell(sum("misc")), cell(sum("total_gross")), h("td", { class: "num" }, h("b", { text: money(sum("total_net")) })),
+          h("td", { class: "num expected", text: money(sum("exp_net")) }), h("td", {}))))),
       h("p", { class: "small muted", text: "החודשים עד 20.10.26 נלקחו מטבלת הרווחים באקסל. מכאן והלאה, כל תשלום שמסמנים \"שולם\" בלשונית התשלומים של פרויקט נכנס לחודש שבו סומן." })));
 }
 

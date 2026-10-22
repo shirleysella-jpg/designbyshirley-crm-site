@@ -217,3 +217,6 @@ table.items td input[type=number] { min-width: 70px; width: 80px; }
   .task { grid-template-columns: 26px 1fr; }
   .task .ctrls { grid-column: 2; justify-content: flex-start; }
 }
+table.income td.expected { color: var(--remind); }
+.addline.wrap { flex-wrap: wrap; align-items: center; }
+.addline.wrap > input, .addline.wrap > select { flex: 1 1 140px; }
