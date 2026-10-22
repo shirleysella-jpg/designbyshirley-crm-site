@@ -435,8 +435,12 @@ function stagesTab(ctx) {
         openTasks.forEach(t => Object.assign(t, { status: "הושלם", done_at: today() }));
         rerender();
       } } }) : null;
+      const deleteBtn = confirmButton("מחיקת השלב", async () => {
+        await run(db.from("stages").delete().eq("id", s.id));
+        toast(`השלב "${s.name}" נמחק מהפרויקט`); renderProject(p.id);
+      });
       const meta = h("div", { class: "stage-meta" },
-        startBtn, completeBtn,
+        startBtn, completeBtn, deleteBtn,
         s.start_date ? h("span", { class: "num", text: "התחיל " + fmt(s.start_date) }) : null,
         field("יעד לשלב", dateField(s.due_date, async v => { await run(db.from("stages").update({ due_date: v }).eq("id", s.id)); s.due_date = v; toast("נשמר"); }, "יעד לשלב")),
         s.typical_days ? h("span", { text: `משך טיפוסי: ${s.typical_days} ימים` }) : null,
