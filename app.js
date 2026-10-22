@@ -52,7 +52,7 @@ function toast(msg) {
 // Replace the page; keep the scroll position when re-rendering the same view
 function paint(key, ...nodes) {
   const y = state.painted === key ? window.scrollY : 0;
-  app.replaceChildren(...nodes);
+  app.replaceChildren(...nodes.flat().filter(n => n != null && n !== false));
   window.scrollTo(0, y);
   state.painted = key;
 }
@@ -721,9 +721,11 @@ function folderTab({ p }) {
 
 // Today & this week -------------------------------------------------------------
 async function renderToday() {
-  const t = today(), week = addDays(t, 7);
-  const [tasks, pays, deliveries, reminders] = await Promise.all([
+  const t = today(), week = addDays(t, 7), lastDay = addDays(t, 6);
+  const [tasks, doneInWeek, projects, pays, deliveries, reminders] = await Promise.all([
     run(db.from("tasks").select("*, projects(id, name, number)").not("status", "in", "(\"הושלם\",\"לא רלוונטי\")").order("due_date", { nullsFirst: false })),
+    run(db.from("tasks").select("*, projects(id, name, number)").eq("status", "הושלם").gte("due_date", t).lte("due_date", lastDay)),
+    run(db.from("projects").select("id, number, name").order("number", { ascending: false, nullsFirst: false })),
     run(db.from("payments").select("*, projects(id, name, number)").is("paid_at", null).not("due_date", "is", null).lte("due_date", week).order("due_date")),
     run(db.from("items").select("*, projects(id, name, number)").in("status", ["נבחר", "הוזמן"]).not("delivery_date", "is", null).lte("delivery_date", week).order("delivery_date")),
     run(db.from("payments").select("*, projects(id, name, number)").eq("remind", true).is("paid_at", null).order("due_date", { nullsFirst: false }))
@@ -733,9 +735,40 @@ async function renderToday() {
   const payWhere = x => x.projects ? label(x) : "בלי פרויקט";
   const refresh = () => renderToday();
   const rows = list => h("div", { class: "card tasks" }, list.map(x => taskRow(x, { projectLabel: label(x), onChange: refresh, onDelete: refresh, rooms: false })));
-  const late = tasks.filter(x => x.due_date && x.due_date < t);
-  const now = tasks.filter(x => x.due_date === t);
-  const soon = tasks.filter(x => x.due_date > t && x.due_date <= week);
+
+  // Day by day for the coming week. Anything left open from an earlier day rolls into today.
+  const carried = tasks.filter(x => x.due_date && x.due_date < t);
+  const dayTasks = iso => [...tasks, ...doneInWeek].filter(x => x.due_date === iso).sort((a, b) => isDone(a) - isDone(b));
+  const dayTitle = (iso, i) => i === 0 ? "היום" : i === 1 ? "מחר" : new Date(iso + "T12:00:00").toLocaleDateString("he-IL", { weekday: "long" });
+  const projectOptions = [["", "כללי (בלי פרויקט)"], ...projects.map(pr => [String(pr.id), `${pr.number ? pr.number + " · " : ""}${pr.name}`])];
+  const addToDay = async (iso, input, pick) => {
+    const name = input.value.trim(); if (!name) { input.focus(); return; }
+    const projectId = pick.value ? Number(pick.value) : null;
+    let stageId = null;
+    if (projectId) {
+      // A project task goes into the project's current stage, so it shows on the project page too
+      const stages = await run(db.from("stages").select("id, done_at").eq("project_id", projectId).order("position"));
+      stageId = (stages.find(s => !s.done_at) || stages.at(-1) || {}).id ?? null;
+    }
+    await run(db.from("tasks").insert({ name, due_date: iso, project_id: projectId, stage_id: stageId, priority: null, position: 900 }));
+    toast("נוסף ל" + (iso === t ? "היום" : fmt(iso))); refresh();
+  };
+  const dayCard = i => {
+    const iso = addDays(t, i);
+    const list = dayTasks(iso);
+    const late = i === 0 ? carried : [];
+    const open = list.filter(isOpen).length + late.length;
+    const input = h("input", { type: "text", placeholder: "מה לעשות " + (i === 0 ? "היום" : i === 1 ? "מחר" : "ב" + dayTitle(iso, i)), "aria-label": "משימה חדשה ל" + dayTitle(iso, i) });
+    const pick = select(projectOptions, "", null, { "aria-label": "פרויקט" });
+    input.addEventListener("keydown", e => { if (e.key === "Enter") addToDay(iso, input, pick); });
+    return h("section", { class: "day" + (i === 0 ? " is-today" : "") },
+      h("h2", {}, dayTitle(iso, i), h("span", { class: "muted small num", text: fmt(iso) }),
+        open ? h("span", { class: "pill" + (late.length ? " late" : ""), text: String(open) }) : null),
+      late.length || list.length ? h("div", { class: "tasks" },
+        late.map(x => taskRow(x, { projectLabel: h("span", {}, label(x), h("span", { class: "carry", text: ` · לא בוצע ב־${fmt(x.due_date)}` })), onChange: refresh, onDelete: refresh, rooms: false })),
+        list.map(x => taskRow(x, { projectLabel: label(x), onChange: refresh, onDelete: refresh, rooms: false }))) : null,
+      h("div", { class: "addline wrap" }, input, pick, h("button", { class: "btn small", type: "button", text: "הוספה", on: { click: () => addToDay(iso, input, pick) } })));
+  };
   const waiting = tasks.filter(x => WAITING.includes(x.status)).sort((a, b) => (a.waiting_since || "").localeCompare(b.waiting_since || ""));
   const section = (title, list, cls) => h("section", { class: "group" }, h("h2", {}, title, h("span", { class: "pill " + (cls || ""), text: String(list.length) })),
     list.length ? rows(list) : h("p", { class: "muted small", text: "אין." }));
@@ -745,9 +778,8 @@ async function renderToday() {
       h("div", { class: "card tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, reminders.map(x => h("tr", { class: "pay-row is-remind" },
         h("td", {}, payWhere(x)), h("td", { text: payLabel(x) }), h("td", { class: "num", text: money(x.amount) }),
         h("td", { class: "num", text: x.due_date ? fmt(x.due_date) : "" }))))))) : null,
-    late.length ? section("באיחור", late, "late") : null,
-    section("להיום", now),
-    section("השבוע", soon),
+    h("div", { class: "week-plan" }, [0, 1, 2, 3, 4, 5, 6].map(dayCard)),
+    h("p", { class: "small muted", text: "משימה שלא סומנה כבוצעה עוברת להיום, עם התאריך שבו תוכננה. כדי להעביר משימה ליום אחר, משנים לה את התאריך." }),
     section("ממתין לאחרים", waiting, "wait"),
     pays.length ? h("section", { class: "group" }, h("h2", {}, "תשלומים לגבות", h("span", { class: "pill oak", text: String(pays.length) })),
       h("div", { class: "card tablewrap" }, h("table", {}, h("tbody", {}, pays.map(x => h("tr", {},

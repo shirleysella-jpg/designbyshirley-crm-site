@@ -220,3 +220,10 @@ table.items td input[type=number] { min-width: 70px; width: 80px; }
 table.income td.expected { color: var(--remind); }
 .addline.wrap { flex-wrap: wrap; align-items: center; }
 .addline.wrap > input, .addline.wrap > select { flex: 1 1 140px; }
+/* Week plan on the today view */
+.week-plan { display: grid; gap: 10px; }
+.day { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; display: grid; gap: 6px; }
+.day.is-today { border-color: var(--oak); }
+.day h2 { display: flex; gap: 8px; align-items: baseline; font-size: 18px; }
+.day .addline { padding-top: 2px; }
+.carry { color: var(--late); font-weight: 600; }
