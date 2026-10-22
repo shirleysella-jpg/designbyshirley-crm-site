@@ -304,7 +304,7 @@ function projectForm(p, all = []) {
 
 // Project page ------------------------------------------------------------------
 async function renderProject(id) {
-  const [p, stages, tasks, dists, pays, questions, meetings, pcontacts, items] = await Promise.all([
+  const [p, stages, tasks, dists, pays, questions, meetings, pcontacts, items, quotes] = await Promise.all([
     run(db.from("projects").select("*").eq("id", id).single()),
     run(db.from("stages").select("*").eq("project_id", id).order("position")),
     run(db.from("tasks").select("*").eq("project_id", id).order("position")),
@@ -313,9 +313,10 @@ async function renderProject(id) {
     run(db.from("questions").select("*").eq("project_id", id).order("created_at")),
     run(db.from("meetings").select("*").eq("project_id", id).order("meet_date", { ascending: false })),
     run(db.from("project_contacts").select("*, contacts(*)").eq("project_id", id)),
-    run(db.from("items").select("*").eq("project_id", id).order("position").order("id"))
+    run(db.from("items").select("*").eq("project_id", id).order("position").order("id")),
+    run(db.from("quotes").select("*").eq("project_id", id).order("created_at", { ascending: false }))
   ]);
-  const ctx = { p, stages, tasks, dists, pays, questions, meetings, pcontacts, items };
+  const ctx = { p, stages, tasks, dists, pays, questions, meetings, pcontacts, items, quotes };
   const s = projectSummary({ ...p, stages, tasks });
   const hours = tasks.reduce((a, t) => a + Number(t.hours || 0), 0);
   const path = p.folder_name ? PROJECTS_ROOT + p.folder_name : null;
@@ -561,7 +562,58 @@ function itemsTab(ctx) {
       cat.key === "tiles" ? h("p", { class: "small muted", text: "מ\"ר להזמנה מחושב מהמ\"ר נטו ועוד אחוז הפחת (ברירת מחדל 10%, אפשר לשנות בכל שורה)." }) : null,
       h("div", { class: "tablewrap" }, h("table", { class: "items" },
         h("thead", {}, h("tr", {}, cat.cols.map(([, label]) => h("th", { text: label })), h("th", {}))), tbody)),
-      h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שורה", on: { click: addRow } }))));
+      h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שורה", on: { click: addRow } }))),
+    quotesCard(ctx, cat));
+}
+
+// Supplier quotes: the file goes to private storage; Claude reads pending ones and fills the table
+const QUOTE_LINK_DAYS = 7;
+function quotesCard(ctx, cat) {
+  const { p, quotes } = ctx;
+  const catLabel = key => (ITEM_CATEGORIES.find(c => c.key === key) || {}).label || "";
+  const supplier = h("input", { type: "text", placeholder: "שם הספק", "aria-label": "שם הספק" });
+  const file = h("input", { type: "file", accept: "application/pdf,image/jpeg,image/png", "aria-label": "קובץ הצעת המחיר" });
+  const upload = async () => {
+    const f = file.files[0];
+    if (!f) { toast("צריך לבחור קובץ"); return; }
+    if (f.size > 20 * 1024 * 1024) { toast("הקובץ גדול מ-20MB"); return; }
+    const ext = (f.name.match(/\.(pdf|jpe?g|png)$/i) || [, "pdf"])[1].toLowerCase();
+    const path = `${state.session.user.id}/${p.id}/${Date.now()}.${ext}`;
+    toast("מעלה…");
+    const { error } = await db.storage.from("quotes").upload(path, f, { contentType: f.type || "application/pdf" });
+    if (error) { fail(error); return; }
+    const signed = await db.storage.from("quotes").createSignedUrl(path, QUOTE_LINK_DAYS * 86400);
+    await run(db.from("quotes").insert({ project_id: p.id, category: cat.key, supplier: supplier.value.trim() || null, file_path: path, file_name: f.name,
+      signed_url: signed.data?.signedUrl || null, signed_until: signed.data ? new Date(Date.now() + QUOTE_LINK_DAYS * 86400000).toISOString() : null }));
+    toast("ההצעה הועלתה. כתבי לי בצ'אט לעדכן לפי ההצעה."); renderProject(p.id);
+  };
+  const openFile = async q => {
+    const { data, error } = await db.storage.from("quotes").createSignedUrl(q.file_path, 120);
+    if (error) { fail(error); return; }
+    window.open(data.signedUrl, "_blank", "noopener");
+  };
+  const remove = async q => {
+    await db.storage.from("quotes").remove([q.file_path]);
+    await run(db.from("quotes").delete().eq("id", q.id)); toast("נמחק"); renderProject(p.id);
+  };
+  // Keep the read link fresh for quotes still waiting, so Claude can open them
+  const soon = Date.now() + 86400000;
+  quotes.filter(q => !q.processed_at && (!q.signed_until || new Date(q.signed_until).getTime() < soon)).forEach(async q => {
+    const { data } = await db.storage.from("quotes").createSignedUrl(q.file_path, QUOTE_LINK_DAYS * 86400);
+    if (data) await db.from("quotes").update({ signed_url: data.signedUrl, signed_until: new Date(Date.now() + QUOTE_LINK_DAYS * 86400000).toISOString() }).eq("id", q.id);
+  });
+  return h("section", { class: "card" },
+    h("h3", { text: "הצעות מחיר מספקים" }),
+    h("p", { class: "small muted", text: `מעלים את ההצעה (PDF או תמונה), ואז כותבים לי בצ'אט "עדכן לפי הצעת המחיר". אני אמלא את הטבלה לפי מה שכתוב בהצעה. ההצעה תשויך ל"${cat.label}".` }),
+    h("div", { class: "addline wrap" }, supplier, file, h("button", { class: "btn small", type: "button", text: "העלאה", on: { click: upload } })),
+    quotes.length ? h("div", { class: "tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, quotes.map(q => h("tr", {},
+      h("td", { text: q.supplier || "" }), h("td", { class: "small muted", text: catLabel(q.category) }),
+      h("td", {}, h("button", { class: "link", type: "button", text: q.file_name || "קובץ", on: { click: () => openFile(q) } })),
+      h("td", { class: "num small", text: fmt(q.created_at) }),
+      h("td", {}, q.processed_at ? h("span", { class: "pill done", text: "עודכן " + fmt(q.processed_at) }) : h("span", { class: "pill oak", text: "ממתין לעדכון" })),
+      h("td", { class: "small muted", text: q.notes || "" }),
+      h("td", {}, confirmButton("מחיקה", () => remove(q))))))))
+      : null);
 }
 
 // One CSV for the whole project; the BOM lets Excel read Hebrew correctly
