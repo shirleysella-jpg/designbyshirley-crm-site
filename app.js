@@ -500,7 +500,7 @@ const ITEM_CATEGORIES = [
   { key: "tiles", label: "ריצוף וחיפוי", cols: [C.room, ["name", "שימוש (רצפה / קיר / חיפוי)"], ["model", "מוצר / דגם"], C.supplier, ["size", "מידת אריח"], ["color", "גוון / גימור"],
     ["quantity", "מ\"ר נטו", "num"], ["waste_pct", "% פחת", "num"], ["_order", "מ\"ר להזמנה", "calc"], ["unit_price", "מחיר למ\"ר", "num"], C.total, C.status, C.notes] },
   { key: "sanitary", label: "כלים סניטריים וארונות רחצה", cols: [C.room, ["name", "פריט"], ["model", "דגם / מק\"ט"], C.supplier, ["color", "גימור / גוון"], ["size", "מידה"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
-  { key: "lighting", label: "גופי תאורה", cols: [C.room, ["name", "סוג הגוף"], ["model", "דגם"], C.supplier, ["color", "גוון הגוף"], ["size", "מידה / גוון אור"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
+  { key: "lighting", label: "גופי תאורה", headerSupplier: true, cols: [["room", "חדר"], ["area", "אזור"], ["name", "סוג הגוף"], ["model", "דגם"], ["color", "גוון הגוף"], ["size", "מידה / גוון אור"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
   { key: "colors", label: "גוונים לקירות", cols: [C.room, ["name", "קיר / מיקום"], ["model", "קוד גוון"], ["color", "שם הגוון"], ["supplier", "חברה"], ["size", "סוג צבע / גמר"], C.notes] },
   { key: "carpentry", label: "נגרות", cols: [["model", "סימון"], C.room, ["name", "תיאור"], ["color", "חזית וגוון"], ["size", "מידות"], ["supplier", "נגר"], C.qty, C.price, C.total, C.status, C.notes] },
   { key: "furniture", label: "ריהוט", cols: [C.room, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "בד / גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
@@ -544,9 +544,21 @@ function itemsTab(ctx) {
     return tr;
   };
 
+  // One supplier for the whole list (lighting): set in the header and copied to every row
+  const headSupplier = () => (p.item_suppliers || {})[cat.key] || null;
+  const supplierField = cat.headerSupplier ? h("label", { class: "row small head-supplier" }, "ספק:",
+    h("input", { type: "text", value: headSupplier() || "", placeholder: "שם הספק", "aria-label": "ספק לכל הרשימה", on: { change: async e => {
+      const v = e.target.value.trim() || null;
+      const all = { ...(p.item_suppliers || {}), [cat.key]: v };
+      await run(db.from("projects").update({ item_suppliers: all }).eq("id", p.id)); p.item_suppliers = all;
+      await run(db.from("items").update({ supplier: v }).eq("project_id", p.id).eq("category", cat.key));
+      list.forEach(x => { x.supplier = v; }); toast("נשמר");
+    } } })) : null;
+
   const tbody = h("tbody", {}, list.map(row));
   const addRow = async () => {
-    const created = await run(db.from("items").insert({ project_id: p.id, category: cat.key, position: list.length + 1, waste_pct: cat.key === "tiles" ? 10 : null }).select().single());
+    const created = await run(db.from("items").insert({ project_id: p.id, category: cat.key, position: list.length + 1, waste_pct: cat.key === "tiles" ? 10 : null,
+      supplier: cat.headerSupplier ? headSupplier() : null }).select().single());
     ctx.items.push(created); list.push(created);
     const tr = row(created); tbody.append(tr); tr.querySelector("input")?.focus();
   };
@@ -556,8 +568,9 @@ function itemsTab(ctx) {
     h("div", { class: "filters" }, ITEM_CATEGORIES.map(c => h("button", { class: "chip" + (c.key === cat.key ? " on" : ""), type: "button", text: c.label + (counts[c.key] ? ` ${counts[c.key]}` : ""),
       on: { click: () => { state.itemCat = c.key; renderProject(p.id); } } }))),
     h("div", { class: "card" },
-      h("div", { class: "row" }, h("h3", { text: cat.label }), h("span", { class: "spacer" }),
+      h("div", { class: "row" }, h("h3", { text: cat.label }), supplierField, h("span", { class: "spacer" }),
         hasPrice ? h("span", { class: "small muted" }, "סה\"כ: ", totalEl) : null,
+        h("button", { class: "btn small ghost", type: "button", text: "תצוגה ללקוח", on: { click: () => clientView(p, cat, list) } }),
         h("button", { class: "btn small ghost", type: "button", text: "ייצוא לאקסל", on: { click: () => exportItems(p, items) } })),
       cat.key === "tiles" ? h("p", { class: "small muted", text: "מ\"ר להזמנה מחושב מהמ\"ר נטו ועוד אחוז הפחת (ברירת מחדל 10%, אפשר לשנות בכל שורה)." }) : null,
       h("div", { class: "tablewrap" }, h("table", { class: "items" },
@@ -616,6 +629,78 @@ function quotesCard(ctx, cat) {
       : null);
 }
 
+// A clean page of one list for clients, saved as PDF from the print dialog.
+// Prices and notes are hidden unless switched on; status is internal and never shown.
+function clientView(p, cat, list) {
+  if (!list.length) { toast("אין עדיין פריטים ברשימה"); return; }
+  const win = window.open("", "_blank");
+  if (!win) { toast("הדפדפן חסם את החלון. צריך לאפשר חלונות קופצים לאתר."); return; }
+  const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const show = (x, f, type) => type === "calc" ? (f === "_order" ? (orderQty(x) ?? "") : (itemTotal(x, cat.key) == null ? "" : money(itemTotal(x, cat.key))))
+    : f === "unit_price" ? (x[f] == null ? "" : money(x[f])) : x[f] ?? "";
+  const priceCols = ["unit_price", "_total"];
+  const cols = cat.cols.filter(([f]) => !["status", "notes", "link", "room", "supplier", "waste_pct"].includes(f));
+  const hasLinks = list.some(x => x.link);
+  const groups = [];
+  for (const x of list) {
+    const room = (x.room || "").trim() || "כללי";
+    let g = groups.find(gr => gr.room === room);
+    if (!g) groups.push(g = { room, items: [] });
+    g.items.push(x);
+  }
+  const supplier = cat.headerSupplier ? (p.item_suppliers || {})[cat.key] : null;
+  const head = cols.map(([f, label]) => `<th class="${priceCols.includes(f) ? "price" : ""}">${esc(label)}</th>`).join("")
+    + `<th class="note">הערות</th>` + (hasLinks ? "<th></th>" : "");
+  const body = groups.map(g => `<tbody><tr class="room"><td colspan="${cols.length + 1 + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`
+    + g.items.map(x => "<tr>" + cols.map(([f, , type]) => `<td class="${priceCols.includes(f) ? "price " : ""}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
+      + `<td class="note">${esc(x.notes)}</td>` + (hasLinks ? `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">לצפייה</a>` : ""}</td>` : "") + "</tr>").join("")
+    + "</tbody>").join("");
+  const total = list.reduce((a, x) => a + (itemTotal(x, cat.key) || 0), 0);
+  const title = `${p.number ? p.number + " · " : ""}${p.name} – ${cat.label}`;
+  win.document.write(`<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@300;500&family=Assistant:wght@400;600&display=swap">
+<style>
+  :root { --ink: #2B2722; --muted: #8A8279; --line: #E6DFD5; --oak: #9C7A4F; --soft: #F6F2EC; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 15px/1.5 Assistant, system-ui, sans-serif; }
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 32px; }
+  .brand { font-family: "Frank Ruhl Libre", serif; color: var(--oak); font-size: 20px; letter-spacing: .5px; }
+  h1 { font-family: "Frank Ruhl Libre", serif; font-weight: 300; font-size: 34px; margin: 18px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: right; font-weight: 600; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--ink); padding: 8px 10px; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr.room td { font-family: "Frank Ruhl Libre", serif; font-size: 19px; color: var(--oak); padding-top: 22px; border-bottom: 1px solid var(--oak); }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.note { color: var(--muted); font-size: 13px; }
+  a { color: var(--oak); }
+  .total { text-align: left; margin-top: 18px; font-size: 17px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; }
+  .tools { position: sticky; top: 0; background: var(--soft); border-bottom: 1px solid var(--line); padding: 10px 32px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+  .tools button { background: var(--oak); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  body:not(.prices) .price, body:not(.prices) .total { display: none; }
+  body:not(.notes) .note { display: none; }
+  @media (max-width: 640px) { .page { padding: 24px 14px; } h1 { font-size: 26px; } table { font-size: 13px; } td, th { padding: 7px 5px; } }
+  @media print { .tools { display: none; } .page { padding: 0; } tr { break-inside: avoid; } @page { margin: 14mm; } }
+</style></head><body>
+<div class="tools">
+  <button type="button" onclick="print()">שמירה כ-PDF / הדפסה</button>
+  <label><input type="checkbox" onchange="document.body.classList.toggle('prices', this.checked)"> להציג מחירים</label>
+  <label><input type="checkbox" onchange="document.body.classList.toggle('notes', this.checked)"> להציג הערות</label>
+  <span style="color:var(--muted)">בחלון ההדפסה בוחרים "שמירה כ-PDF".</span>
+</div>
+<div class="page">
+  <div class="brand">designbyshirley</div>
+  <h1>${esc(cat.label)}</h1>
+  <p class="sub">${esc(`${p.name}${p.number ? " · פרויקט " + p.number : ""}`)}${supplier ? " · ספק: " + esc(supplier) : ""} · ${esc(fmt(today()))}</p>
+  <table><thead><tr>${head}</tr></thead>${body}</table>
+  ${total ? `<p class="total">סה"כ: <b>${esc(money(total))}</b></p>` : ""}
+  <footer><span>designbyshirley · שירלי סלע שמש</span><span>instagram.com/designbyshirley</span></footer>
+</div></body></html>`);
+  win.document.close();
+}
+
 // One CSV for the whole project; the BOM lets Excel read Hebrew correctly
 function exportItems(p, items) {
   const esc = v => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -624,6 +709,7 @@ function exportItems(p, items) {
     const list = items.filter(x => x.category === cat.key);
     if (!list.length) continue;
     lines.push(esc(cat.label));
+    if (cat.headerSupplier && (p.item_suppliers || {})[cat.key]) lines.push(esc("ספק: " + p.item_suppliers[cat.key]));
     lines.push(cat.cols.map(c => esc(c[1])).join(","));
     for (const x of list) lines.push(cat.cols.map(([f, , type]) => esc(type === "calc" ? (f === "_order" ? orderQty(x) : itemTotal(x, cat.key)) : x[f])).join(","));
     lines.push("");

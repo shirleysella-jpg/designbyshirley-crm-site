@@ -227,3 +227,5 @@ table.income td.expected { color: var(--remind); }
 .day h2 { display: flex; gap: 8px; align-items: baseline; font-size: 18px; }
 .day .addline { padding-top: 2px; }
 .carry { color: var(--late); font-weight: 600; }
+.head-supplier { gap: 6px; color: var(--muted); }
+.head-supplier input { width: 180px; }
