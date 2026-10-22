@@ -198,6 +198,7 @@ async function route() {
     if (view === "p" && id) await renderProject(Number(id));
     else if (view === "today") await renderToday();
     else if (view === "general") await renderGeneral();
+    else if (view === "income") await renderIncome();
     else if (view === "contacts") await renderContacts();
     else await renderProjects();
   } catch (e) { if (!e.code) fail(e); }
@@ -772,6 +773,85 @@ async function renderGeneral() {
     h("div", { class: "filters" }, filters.map(f => h("button", { class: "chip" + (f === state.generalFilter ? " on" : ""), type: "button", text: f, on: { click: () => { state.generalFilter = f; renderGeneral(); } } }))),
     open.length ? h("div", { class: "card tasks" }, open.map(x => taskRow(x, { ...opts, projectLabel: x.category || "" }))) : h("div", { class: "empty" }, "אין משימות פתוחות."),
     closed.length ? h("details", {}, h("summary", { class: "muted", text: `הושלמו (${closed.length})` }), h("div", { class: "card tasks" }, closed.map(x => taskRow(x, opts)))) : null);
+}
+
+// Monthly income -----------------------------------------------------------------
+// Months up to the import come from "טבלת רווחים" (income_months). Payments marked paid in the system
+// after that date are added on top. Payments bulk-marked paid during the import (20.10.26) are already in the table.
+const LIVE_FROM = "2026-10-21";
+const MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+
+async function renderIncome() {
+  const now = new Date();
+  const thisYear = now.getFullYear(), thisMonth = now.getMonth() + 1;
+  const year = state.incomeYear || thisYear;
+  const [hist, paid, open, years] = await Promise.all([
+    run(db.from("income_months").select("*").eq("year", year)),
+    run(db.from("payments").select("*, projects(name, number)").not("paid_at", "is", null).gte("paid_at", LIVE_FROM).gte("paid_at", `${year}-01-01`).lte("paid_at", `${year}-12-31`)),
+    run(db.from("payments").select("*, projects(name, number)").is("paid_at", null)),
+    run(db.from("income_months").select("year"))
+  ]);
+  const yearList = [...new Set([...years.map(r => r.year), thisYear])].sort((a, b) => b - a);
+  const who = x => x.kind === "commission" ? (x.supplier || x.name) : (x.projects ? x.projects.name : x.name);
+  const gross = n => Number(n || 0) * (1 + VAT);
+  const add = (a, b) => (a == null && !b) ? a : Number(a || 0) + Number(b || 0);
+  const joinFrom = (a, list) => [a, ...list].filter(Boolean).join(" + ");
+
+  const rows = MONTHS.map((name, i) => {
+    const m = i + 1, hRow = hist.find(r => r.month === m) || {};
+    const inMonth = paid.filter(x => Number(x.paid_at.slice(5, 7)) === m);
+    const fees = inMonth.filter(x => x.kind !== "commission"), coms = inMonth.filter(x => x.kind === "commission");
+    const feeNet = fees.reduce((a, x) => a + Number(x.amount || 0), 0), comNet = coms.reduce((a, x) => a + Number(x.amount || 0), 0);
+    return {
+      m, name,
+      fees_gross: add(hRow.fees_gross, gross(feeNet)), fees_net: add(hRow.fees_net, feeNet), fees_from: joinFrom(hRow.fees_from, fees.map(who)),
+      com_gross: add(hRow.com_gross, gross(comNet)), com_net: add(hRow.com_net, comNet), com_from: joinFrom(hRow.com_from, coms.map(who)),
+      misc: hRow.misc, total_gross: add(hRow.total_gross, gross(feeNet + comNet)), total_net: add(hRow.total_net, feeNet + comNet), notes: hRow.notes
+    };
+  });
+  const sum = f => rows.reduce((a, r) => a + Number(r[f] || 0), 0);
+  const cell = v => h("td", { class: "num", text: v == null || v === 0 ? "—" : money(v) });
+
+  // Expected: unpaid payments with an expected date this month / next month
+  const ym = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+  const nextY = thisMonth === 12 ? thisYear + 1 : thisYear, nextM = thisMonth === 12 ? 1 : thisMonth + 1;
+  const dueIn = key => open.filter(x => x.due_date && x.due_date.slice(0, 7) === key);
+  const overdue = open.filter(x => x.due_date && x.due_date.slice(0, 7) < ym(thisYear, thisMonth));
+  const thisList = dueIn(ym(thisYear, thisMonth)), nextList = dueIn(ym(nextY, nextM));
+  const noDate = open.filter(x => !x.due_date && x.amount);
+  const expectCard = (title, list, note) => h("section", { class: "card" },
+    h("div", { class: "row" }, h("h3", { text: title }), h("span", { class: "spacer" }),
+      h("span", { class: "small muted" }, "נטו: ", h("b", { class: "num", text: money(list.reduce((a, x) => a + Number(x.amount || 0), 0)) }),
+        " · כולל מע\"מ: ", h("b", { class: "num", text: money(gross(list.reduce((a, x) => a + Number(x.amount || 0), 0))) }))),
+    note ? h("p", { class: "small muted", text: note }) : null,
+    list.length ? h("div", { class: "tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, list.map(x => h("tr", { class: "pay-row" + (x.remind ? " is-remind" : "") },
+      h("td", { text: who(x) }), h("td", { class: "small muted", text: x.kind === "commission" ? `עמלה · ${x.name}` : `שכר טרחה · ${x.name}` }),
+      h("td", { class: "num", text: money(x.amount) }), h("td", { class: "num", text: x.due_date ? fmt(x.due_date) : "" }),
+      h("td", {}, x.projects ? h("a", { href: `#/p/${x.project_id}`, text: x.projects.number || "" }) : null))))))
+      : h("p", { class: "muted small", text: "אין תשלומים עם תאריך צפוי בתקופה הזאת." }));
+
+  paint("income",
+    h("div", { class: "page-head" },
+      h("div", {}, h("h1", { text: "הכנסות" }), h("p", { class: "sub", text: "שכר טרחה ועמלות שנכנסו בכל חודש, וכמה עוד צפוי להיכנס." }))),
+    h("div", { class: "filters" }, yearList.map(y => h("button", { class: "chip" + (y === year ? " on" : ""), type: "button", text: String(y),
+      on: { click: () => { state.incomeYear = y; renderIncome(); } } }))),
+    year === thisYear ? h("div", { class: "group" },
+      overdue.length ? expectCard("באיחור (היה צפוי בחודשים קודמים)", overdue) : null,
+      expectCard(`צפוי להיכנס עוד ${MONTHS[thisMonth - 1]}`, thisList),
+      expectCard(`מי צפוי לשלם ב${MONTHS[nextM - 1]}`, nextList),
+      noDate.length ? h("p", { class: "small muted" }, `${noDate.length} תשלומים פתוחים עם סכום בלי תאריך "צפוי להיכנס". אפשר להוסיף תאריך בלשונית התשלומים של כל פרויקט.`) : null) : null,
+    h("section", { class: "card" },
+      h("h3", { text: `${year} לפי חודשים` }),
+      h("div", { class: "tablewrap" }, h("table", { class: "income" },
+        h("thead", {}, h("tr", {}, ["חודש", "שכר טרחה", "שכ\"ט נטו", "ממי שכ\"ט", "עמלות", "עמלות נטו", "ממי העמלות", "שונות", "סה\"כ", "סה\"כ נטו"].map(t => h("th", { text: t })))),
+        h("tbody", {}, rows.map(r => h("tr", { class: year === thisYear && r.m === thisMonth ? "current-month" : null },
+          h("td", {}, h("b", { text: r.name }), r.notes ? h("div", { class: "small muted", text: r.notes }) : null),
+          cell(r.fees_gross), cell(r.fees_net), h("td", { class: "small from", text: r.fees_from || "" }),
+          cell(r.com_gross), cell(r.com_net), h("td", { class: "small from", text: r.com_from || "" }),
+          cell(r.misc), cell(r.total_gross), h("td", { class: "num" }, h("b", { text: r.total_net ? money(r.total_net) : "—" }))))),
+        h("tfoot", {}, h("tr", {}, h("td", {}, h("b", { text: "סה\"כ שנתי" })), cell(sum("fees_gross")), cell(sum("fees_net")), h("td", {}),
+          cell(sum("com_gross")), cell(sum("com_net")), h("td", {}), cell(sum("misc")), cell(sum("total_gross")), h("td", { class: "num" }, h("b", { text: money(sum("total_net")) })))))),
+      h("p", { class: "small muted", text: "החודשים עד 20.10.26 נלקחו מטבלת הרווחים באקסל. מכאן והלאה, כל תשלום שמסמנים \"שולם\" בלשונית התשלומים של פרויקט נכנס לחודש שבו סומן." })));
 }
 
 // Contacts ---------------------------------------------------------------------

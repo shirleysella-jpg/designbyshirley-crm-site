@@ -158,6 +158,12 @@ td input[type=text], td input[type=number], td input[type=date] { width: 100%; m
 .date-btn:hover { background: var(--oak-soft); }
 .date-native { position: absolute; inset-inline-end: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
 
+/* Income */
+table.income td, table.income th { white-space: nowrap; }
+table.income td.from { white-space: normal; min-width: 180px; max-width: 320px; color: var(--muted); }
+table.income tr.current-month td { background: var(--oak-soft); }
+table.income tfoot td { border-top: 2px solid var(--line); background: var(--sunk); }
+
 /* Payments */
 .pay-section { border-top-width: 6px; }
 .pay-section.fees { border-top-color: var(--oak); }
