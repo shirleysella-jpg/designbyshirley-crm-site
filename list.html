@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>designbyshirley · רשימה</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Bellefair&display=swap">
+<style>
+/* Client page for one meeting's lists: photo cards of existing furniture, a shopping list with status, a task checklist.
+   Opened through a secret link (?t=token); people with the link add and change rows, deleting stays in the CRM. */
+:root{
+  --bg:#F3F3F0; --surface:#FFFFFF; --sunk:#E7E6E1; --ink:#262A28; --muted:#6A6F6B; --line:#DAD9D3;
+  --oak:#93693D; --oak-soft:#F2E9DD; --sage:#5F7863; --sage-soft:#E2EAE2; --scrim:rgba(24,27,25,.5);
+  --display:"Bellefair","Frank Ruhl Libre",Georgia,serif;
+  --body:"Assistant","Segoe UI",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#1B1D1C; --surface:#242725; --sunk:#2D302E; --ink:#ECEBE6; --muted:#A2A7A2; --line:#3A3E3B;
+  --oak:#CDA678; --oak-soft:#3A3128; --sage:#9DB79F; --sage-soft:#2B372D; --scrim:rgba(0,0,0,.6); color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55;padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+img{max-width:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--oak);outline-offset:2px}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+.top{padding-block:44px 26px}
+.brand{margin:0;font-size:12px;letter-spacing:.26em;color:var(--muted);direction:ltr;unicode-bidi:isolate}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(42px,7vw,66px);line-height:1.05;margin:10px 0 8px;text-wrap:balance}
+.sub{margin:0;color:var(--muted);font-size:17px}
+
+.secnav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.secnav .wrap{display:flex;gap:26px;overflow-x:auto;scrollbar-width:none}
+.secnav a{display:flex;align-items:baseline;gap:7px;padding-block:14px 13px;color:var(--muted);text-decoration:none;font-weight:600;white-space:nowrap;border-bottom:2px solid transparent}
+.secnav a:hover{color:var(--ink);border-bottom-color:var(--oak)}
+.secnav .n{font-size:13px;font-weight:400;font-variant-numeric:tabular-nums}
+
+section{padding-block:44px 6px;scroll-margin-top:56px}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px 16px;flex-wrap:wrap;margin-bottom:20px}
+h2{font-family:var(--display);font-weight:400;font-size:34px;line-height:1.1;margin:0}
+.sec-head p{margin:0;color:var(--muted);font-size:15px}
+.state{padding-block:80px;color:var(--muted);font-size:17px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.ph{aspect-ratio:4/3;max-width:100%;background:var(--sunk);display:grid;place-items:center;color:var(--muted);font-size:13px;border:0;padding:0;width:100%}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+button.ph{cursor:zoom-in}
+.card-body{padding:15px 18px 10px;display:grid;gap:8px;align-content:start;flex:1}
+.eyebrow{font-size:12px;letter-spacing:.06em;color:var(--oak);font-weight:700}
+h3{font-size:19px;font-weight:600;margin:0;line-height:1.3}
+.dims{display:flex;flex-wrap:wrap;gap:6px 20px;margin:0}
+.dims div{display:grid}
+.dims dt{font-size:12px;color:var(--muted)}
+.dims dd{margin:0;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.nodims{margin:0;font-size:14px;color:var(--muted)}
+.note{margin:0;font-size:14px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px}
+.card .edit{align-self:flex-start;margin:0 18px 14px}
+
+.list{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.list>li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 20px;border-top:1px solid var(--line)}
+.list>li:first-child{border-top:0}
+.list .empty{display:block;color:var(--muted)}
+.pill{font-size:13px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:transparent;white-space:nowrap;min-width:66px;text-align:center;cursor:pointer}
+.st-choosing .pill{background:var(--oak-soft);color:var(--oak);border-color:transparent}
+.st-bought .pill{background:var(--sage-soft);color:var(--sage);border-color:transparent}
+.st-bought .item-name{color:var(--muted)}
+.item-name{font-weight:600;font-size:17px}
+.qty{font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta{display:flex;flex-wrap:wrap;gap:2px 16px;font-size:14px;color:var(--muted);margin-top:2px}
+.meta a{color:var(--oak);font-weight:600}
+.line-note{font-size:14px;color:var(--muted);margin-top:2px}
+.end{display:flex;align-items:center;gap:10px}
+.thumb{width:56px;height:56px;border-radius:4px;overflow:hidden;background:var(--sunk);border:0;padding:0;cursor:zoom-in;flex:none}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.check{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--muted);background:transparent;display:grid;place-items:center;padding:0;flex:none;cursor:pointer}
+.done .check{background:var(--sage);border-color:var(--sage)}
+.done .check::after{content:"";width:6px;height:11px;border:solid var(--surface);border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+.done .item-name{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
+
+.btn{font:600 14px var(--body);padding:9px 18px;border-radius:999px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn.small{padding:5px 13px;font-size:13px;border-color:var(--line);color:var(--muted)}
+.btn.small:hover{color:var(--ink);border-color:var(--oak)}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.btn.ghost{border-color:var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.add{margin-top:14px;width:100%;padding:13px;border:1.5px dashed var(--line);border-radius:6px;background:transparent;color:var(--oak);font-weight:700;cursor:pointer}
+.add:hover{border-color:var(--oak)}
+
+footer{padding-block:56px 40px;color:var(--muted);font-size:13px}
+footer .brand{display:inline}
+
+.overlay{position:fixed;inset:0;z-index:20;background:var(--scrim);display:grid;place-items:center;padding:16px}
+.sheet{background:var(--surface);border-radius:10px;width:min(520px,100%);max-height:100%;overflow:auto;padding:24px}
+.sheet h2{font-size:28px;margin-bottom:18px}
+.fields{display:grid;gap:14px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fields label{display:grid;gap:5px;font-size:13px;font-weight:700;color:var(--muted)}
+.fields input,.fields textarea,.fields select{font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+.fields .checkrow{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--ink)}
+.fields .checkrow input{width:20px;height:20px}
+.imgfield{display:grid;gap:8px}
+.imgfield .ph{border-radius:6px;overflow:hidden}
+.filebtn{position:relative;overflow:hidden;align-self:start;justify-self:start}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.hint{margin:0;font-size:13px;color:var(--muted)}
+.sheet-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px}
+.lb{cursor:zoom-out}
+.lb img{max-width:100%;max-height:100%;border-radius:6px;object-fit:contain}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:30;background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:14px;font-weight:600;max-width:calc(100% - 32px);text-align:center}
+
+@media (max-width:520px){
+  .top{padding-block:30px 20px}
+  .grid{grid-template-columns:1fr 1fr;gap:12px}
+  .card-body{padding:12px 12px 8px}
+  .card .edit{margin:0 12px 12px}
+  h3{font-size:16px}
+  .dims{gap:4px 12px}
+  .dims dd{font-size:15px}
+  .list>li{padding:13px 14px;gap:10px}
+  .thumb{width:46px;height:46px}
+  .pair{grid-template-columns:1fr}
+}
+@media (max-width:340px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="app"><p class="wrap state">טוען את הרשימה…</p></div>
+<div id="layer"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+(function(){
+'use strict';
+var SUPABASE_URL='https://fsygskqtzlegktwhivej.supabase.co';
+var KEY='sb_publishable_K26rM_RD4giaWqMcNPewlg_0JyZe4LW';
+var TOKEN=new URLSearchParams(location.search).get('t')||window.SHARE_TOKEN||'';
+var STATUS_KEYS={'לקנות':'todo','בבחירה':'choosing','נרכש':'bought'};
+var STATUSES=['לקנות','בבחירה','נרכש'];
+var FIELDS={
+  existing:[['name','שם הפריט'],['room','חלל'],['size','מידות'],['notes','הערות','textarea']],
+  buy:[['name','שם הפריט'],['quantity','כמות','pair'],['room','חלל','pair'],['size','מידות'],['supplier','חנות / ספק'],['link','קישור למוצר'],['notes','הערות','textarea']],
+  task:[['name','משימה'],['notes','הערות','textarea']]
+};
+var NOUN={existing:'רהיט',buy:'פריט לקנייה',task:'משימה'};
+var app=document.getElementById('app'),layer=document.getElementById('layer');
+var data=null,modal=null,zoomSrc=null,busy=false,toastTimer=null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function img(path){return path?SUPABASE_URL+'/storage/v1/object/public/meeting-images/'+path.split('/').map(encodeURIComponent).join('/'):''}
+function fmtDate(iso){var p=String(iso||'').split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:''}
+function times(s){return String(s).replace(/(\d)\s*[xX×]\s*(\d)/g,'$1×$2')}
+function safeLink(u){u=String(u||'').trim();return /^https?:\/\//i.test(u)?u:''}
+function items(kind){return (data.items||[]).filter(function(x){return x.kind===kind})}
+function toast(msg){var el=document.getElementById('toast');el.textContent=msg;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(function(){el.hidden=true},3200)}
+
+function rpc(fn,body){
+  return fetch(SUPABASE_URL+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()});
+}
+function load(){
+  if(!TOKEN){showState('הקישור לא שלם. כדאי לפתוח אותו שוב מההודעה.');return Promise.resolve()}
+  return rpc('meeting_share',{token:TOKEN}).then(function(d){
+    if(!d){showState('הקישור לא פעיל יותר. אפשר לבקש קישור חדש משירלי.');return}
+    data=d;document.title=d.title+' · designbyshirley';render();
+  }).catch(function(){if(!data)showState('לא הצלחנו לטעון את הרשימה. כדאי לנסות שוב בעוד רגע.')});
+}
+function showState(msg){app.innerHTML='<p class="wrap state">'+esc(msg)+'</p>'}
+
+function dims(s){
+  s=String(s||'').trim();
+  if(!s)return '<p class="nodims">מידות לא צוינו</p>';
+  var re=/(רוחב|עומק|גובה|אורך|קוטר)\s*([\d.,]+)/g,m,parts=[];
+  while((m=re.exec(s)))parts.push('<div><dt>'+m[1]+'</dt><dd>'+esc(m[2])+'</dd></div>');
+  if(!parts.length)parts.push('<div><dt>מידה</dt><dd dir="ltr">'+esc(times(s))+'</dd></div>');
+  return '<dl class="dims">'+parts.join('')+'</dl>';
+}
+function card(x){
+  var media=x.image_path?'<button class="ph" data-a="zoom" data-src="'+esc(img(x.image_path))+'" aria-label="הגדלת התמונה"><img src="'+esc(img(x.image_path))+'" alt="'+esc(x.name)+'" loading="lazy"></button>'
+    :'<div class="ph">תמונה תתווסף בהמשך</div>';
+  return '<article class="card">'+media+'<div class="card-body">'+(x.room?'<span class="eyebrow">'+esc(x.room)+'</span>':'')+
+    '<h3>'+esc(x.name||'')+'</h3>'+dims(x.size)+(x.notes?'<p class="note">'+esc(x.notes)+'</p>':'')+'</div>'+
+    '<button class="btn small edit" data-a="open" data-id="'+x.id+'">עריכה</button></article>';
+}
+function buyRow(x){
+  var key=STATUS_KEYS[x.status]||'todo',meta=[];
+  if(x.room)meta.push(esc(x.room));
+  if(x.size)meta.push('<span>מידות: <bdi>'+esc(times(x.size))+'</bdi></span>');
+  if(x.supplier)meta.push(esc(x.supplier));
+  var link=safeLink(x.link);
+  if(link)meta.push('<a href="'+esc(link)+'" target="_blank" rel="noopener">לצפייה במוצר</a>');
+  return '<li class="st-'+key+'"><button class="pill" data-a="status" data-id="'+x.id+'" title="לחיצה משנה סטטוס">'+esc(x.status)+'</button>'+
+    '<div><div class="item-name">'+esc(x.name||'')+(x.quantity?' <span class="qty">× '+esc(x.quantity)+'</span>':'')+'</div>'+
+    (meta.length?'<div class="meta">'+meta.join('')+'</div>':'')+(x.notes?'<div class="line-note">'+esc(x.notes)+'</div>':'')+'</div>'+
+    '<div class="end">'+(x.image_path?'<button class="thumb" data-a="zoom" data-src="'+esc(img(x.image_path))+'" aria-label="הגדלת התמונה"><img src="'+esc(img(x.image_path))+'" alt="" loading="lazy"></button>':'')+
+    '<button class="btn small" data-a="open" data-id="'+x.id+'">עריכה</button></div></li>';
+}
+function taskRow(x){
+  return '<li class="'+(x.done?'done':'')+'"><button class="check" data-a="toggle" data-id="'+x.id+'" aria-pressed="'+(x.done?'true':'false')+'" aria-label="'+(x.done?'סימון כלא בוצע':'סימון כבוצע')+'"></button>'+
+    '<div><div class="item-name">'+esc(x.name||'')+'</div>'+(x.notes?'<div class="line-note">'+esc(x.notes)+'</div>':'')+'</div>'+
+    '<div class="end"><button class="btn small" data-a="open" data-id="'+x.id+'">עריכה</button></div></li>';
+}
+
+function render(){
+  var E=items('existing'),B=items('buy'),T=items('task');
+  var bought=B.filter(function(x){return x.status==='נרכש'}).length,done=T.filter(function(x){return x.done}).length;
+  var h='<header class="wrap top"><p class="brand">designbyshirley</p><h1>'+esc(data.title)+'</h1>'+
+    '<p class="sub">'+esc([data.meeting,fmtDate(data.meet_date)].filter(Boolean).join(' · '))+'</p></header>';
+  h+='<nav class="secnav" aria-label="חלקי הדף"><div class="wrap">'+
+    '<a href="#existing">ריהוט קיים <span class="n">'+E.length+'</span></a>'+
+    '<a href="#buy">לקנות <span class="n">'+(bought?bought+' מתוך '+B.length+' נרכשו':B.length)+'</span></a>'+
+    '<a href="#tasks">משימות <span class="n">'+(done?done+' מתוך '+T.length+' בוצעו':T.length)+'</span></a></div></nav><main class="wrap">';
+  h+='<section id="existing"><div class="sec-head"><h2>ריהוט קיים</h2><p>הרהיטים שיש לכם היום, עם תמונה ומידות</p></div>'+
+    (E.length?'<div class="grid">'+E.map(card).join('')+'</div>':'<p class="nodims">אין עדיין פריטים ברשימה.</p>')+
+    '<button class="add" data-a="add" data-kind="existing">+ הוספת רהיט</button></section>';
+  h+='<section id="buy"><div class="sec-head"><h2>מה צריך לקנות</h2><p>'+(B.length-bought)+' פריטים פתוחים</p></div>'+
+    '<ul class="list">'+(B.length?B.map(buyRow).join(''):'<li class="empty">הרשימה ריקה.</li>')+'</ul>'+
+    '<button class="add" data-a="add" data-kind="buy">+ הוספת פריט לקנייה</button></section>';
+  h+='<section id="tasks"><div class="sec-head"><h2>משימות</h2><p>'+(T.length-done)+' משימות פתוחות</p></div>'+
+    '<ul class="list">'+(T.length?T.map(taskRow).join(''):'<li class="empty">אין משימות פתוחות.</li>')+'</ul>'+
+    '<button class="add" data-a="add" data-kind="task">+ הוספת משימה</button></section>';
+  h+='</main><footer class="wrap"><span class="brand">designbyshirley</span> · עיצוב פנים</footer>';
+  app.innerHTML=h;
+}
+
+function renderLayer(){
+  var h='';
+  if(modal){
+    var d=modal.draft,fs=FIELDS[d.kind],pairOpen=false;
+    h+='<div class="overlay"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="m-title"><h2 id="m-title">'+(d.id?'עריכת ':'הוספת ')+NOUN[d.kind]+'</h2><div class="fields">';
+    if(d.kind!=='task'){
+      h+='<div class="imgfield"><div class="ph">'+(modal.uploading?'מעלה תמונה…':d.image_path?'<img src="'+esc(img(d.image_path))+'" alt="">':'אין תמונה')+'</div>'+
+        '<span class="btn small filebtn">'+(d.image_path?'החלפת תמונה':'הוספת תמונה')+'<input type="file" id="img-file" accept="image/jpeg,image/png,image/webp"></span></div>';
+    }
+    fs.forEach(function(f){
+      var id='f-'+f[0],v=esc(d[f[0]]||'');
+      var ctl=f[2]==='textarea'?'<textarea id="'+id+'" data-field="'+f[0]+'" rows="3">'+v+'</textarea>':
+        '<input id="'+id+'" data-field="'+f[0]+'" value="'+v+'"'+(f[0]==='link'?' type="url" dir="ltr" placeholder="https://"':'')+'>';
+      var lab='<label for="'+id+'">'+f[1]+ctl+'</label>';
+      if(f[2]==='pair'){if(!pairOpen){h+='<div class="pair">'+lab;pairOpen=true}else{h+=lab+'</div>';pairOpen=false}}
+      else h+=lab;
+    });
+    if(d.kind==='buy')h+='<label for="f-status">סטטוס<select id="f-status" data-field="status">'+STATUSES.map(function(s){return '<option'+(d.status===s?' selected':'')+'>'+s+'</option>'}).join('')+'</select></label>';
+    if(d.kind==='task')h+='<label class="checkrow" for="f-done"><input type="checkbox" id="f-done" data-field="done"'+(d.done?' checked':'')+'>בוצע</label>';
+    if(d.id)h+='<p class="hint">רוצים להוריד שורה מהרשימה? כתבו לי ואמחק אותה.</p>';
+    h+='</div><div class="sheet-actions"><button class="btn ghost" data-a="close">ביטול</button><button class="btn primary" data-a="apply"'+(modal.uploading||busy?' disabled':'')+'>שמירה</button></div></div></div>';
+  }
+  if(zoomSrc)h+='<div class="overlay lb" data-a="unzoom" role="dialog" aria-label="תמונה מוגדלת"><img src="'+esc(zoomSrc)+'" alt=""></div>';
+  layer.innerHTML=h;
+}
+
+function find(id){return (data.items||[]).find(function(x){return String(x.id)===String(id)})}
+function openModal(kind,id){
+  var x=id?find(id):null;
+  modal={uploading:false,draft:x?JSON.parse(JSON.stringify(x)):{kind:kind,name:'',room:'',size:'',quantity:'',supplier:'',link:'',notes:'',status:'לקנות',done:false,image_path:null}};
+  renderLayer();
+  var first=layer.querySelector('input:not([type=file]),textarea');if(first)first.focus();
+}
+function closeModal(){modal=null;renderLayer()}
+function saveItem(item){
+  busy=true;
+  var clean={};['id','kind','name','room','size','quantity','supplier','link','notes','status','done','image_path'].forEach(function(k){
+    var v=item[k];clean[k]=typeof v==='string'?(v.trim()||null):v;
+  });
+  return rpc('meeting_share_save',{token:TOKEN,item:clean}).then(function(){return load()})
+    .catch(function(){toast('השמירה לא הצליחה. כדאי לנסות שוב.');throw new Error('save')})
+    .finally(function(){busy=false});
+}
+function applyModal(){
+  var d=modal.draft;
+  if(!String(d.name||'').trim()){toast(d.kind==='task'?'צריך לכתוב את המשימה':'צריך לכתוב שם לפריט');return}
+  saveItem(d).then(function(){closeModal();toast('נשמר')}).catch(function(){renderLayer()});
+}
+
+function shrink(file){
+  return new Promise(function(resolve){
+    if(!window.createImageBitmap||!/^image\/(jpeg|png|webp)$/.test(file.type))return resolve(file);
+    createImageBitmap(file).then(function(bmp){
+      var s=Math.min(1,1600/Math.max(bmp.width,bmp.height));
+      if(s===1&&file.size<1500000)return resolve(file);
+      var c=document.createElement('canvas');c.width=Math.round(bmp.width*s);c.height=Math.round(bmp.height*s);
+      c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+      c.toBlob(function(b){resolve(b||file)},'image/jpeg',0.85);
+    }).catch(function(){resolve(file)});
+  });
+}
+function upload(file){
+  if(!file||!modal)return;
+  if(!/^image\/(jpeg|png|webp)$/.test(file.type)){toast('אפשר להעלות תמונה מסוג JPG, PNG או WEBP');return}
+  var m=modal;m.uploading=true;renderLayer();
+  shrink(file).then(function(blob){
+    var type=blob.type||'image/jpeg',ext=type==='image/png'?'png':type==='image/webp'?'webp':'jpg';
+    var path='share/'+TOKEN+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.'+ext;
+    return fetch(SUPABASE_URL+'/storage/v1/object/meeting-images/'+path,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':type},body:blob})
+      .then(function(r){if(!r.ok)throw new Error(r.status);m.draft.image_path=path});
+  }).catch(function(){toast('העלאת התמונה לא הצליחה. כדאי לנסות שוב.')})
+  .then(function(){m.uploading=false;if(modal===m)renderLayer()});
+}
+
+document.addEventListener('click',function(e){
+  if(e.target.classList&&e.target.classList.contains('overlay')&&modal){closeModal();return}
+  var el=e.target.closest('[data-a]');if(!el)return;
+  var a=el.dataset.a,x;
+  if(a==='open'){x=find(el.dataset.id);if(x)openModal(x.kind,x.id)}
+  else if(a==='add')openModal(el.dataset.kind,null);
+  else if(a==='close')closeModal();
+  else if(a==='apply')applyModal();
+  else if(a==='zoom'){zoomSrc=el.dataset.src;renderLayer()}
+  else if(a==='unzoom'){zoomSrc=null;renderLayer()}
+  else if((a==='status'||a==='toggle')&&!busy){
+    x=find(el.dataset.id);if(!x)return;
+    var next=JSON.parse(JSON.stringify(x));
+    if(a==='status')next.status=STATUSES[(STATUSES.indexOf(x.status)+1)%STATUSES.length];else next.done=!x.done;
+    Object.assign(x,next);render();
+    saveItem(next).catch(function(){load()});
+  }
+});
+document.addEventListener('input',function(e){var f=e.target.dataset&&e.target.dataset.field;if(f&&modal&&f!=='done')modal.draft[f]=e.target.value});
+document.addEventListener('change',function(e){
+  if(e.target.id==='img-file')upload(e.target.files&&e.target.files[0]);
+  else if(e.target.dataset&&e.target.dataset.field==='done'&&modal)modal.draft.done=e.target.checked;
+});
+document.addEventListener('keydown',function(e){if(e.key!=='Escape')return;if(zoomSrc){zoomSrc=null;renderLayer()}else if(modal)closeModal()});
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&!modal&&!busy&&data)load()});
+load();
+})();
+</script>
+</body>
+</html>

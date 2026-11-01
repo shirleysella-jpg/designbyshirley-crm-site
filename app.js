@@ -515,6 +515,59 @@ function itemTotal(x, cat) {
 }
 const calcValue = (x, f, cat) => f === "_order" ? (orderQty(x) ?? "—") : money(itemTotal(x, cat));
 
+// Drag a table row by its handle (mouse or finger), or move it with the arrow keys; onMoved runs after each move
+function rowDragHandle(getRow, onMoved) {
+  const handle = h("button", { class: "drag-handle", type: "button", title: "גרירה לשינוי הסדר", "aria-label": "גרירה לשינוי הסדר (או חצים למעלה ולמטה)", text: "⠿" });
+  handle.addEventListener("pointerdown", e => startRowDrag(e, getRow(), onMoved));
+  handle.addEventListener("keydown", e => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const tr = getRow(), sib = e.key === "ArrowUp" ? tr.previousElementSibling : tr.nextElementSibling;
+    if (!sib) return;
+    if (e.key === "ArrowUp") sib.before(tr); else sib.after(tr);
+    handle.focus(); onMoved();
+  });
+  return handle;
+}
+// The row moves only on release: moving it mid-drag detaches the handle and the browser drops the drag.
+function startRowDrag(e, tr, onMoved) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const tbody = tr.parentNode;
+  let target = null, after = false;
+  const clear = () => tbody.querySelectorAll(".drop-before, .drop-after").forEach(r => r.classList.remove("drop-before", "drop-after"));
+  tr.classList.add("dragging"); document.body.classList.add("is-dragging");
+  const move = ev => {
+    ev.preventDefault();
+    const rowsNow = [...tbody.children].filter(r => r !== tr);
+    if (!rowsNow.length) return;
+    const first = rowsNow[0].getBoundingClientRect(), last = rowsNow.at(-1).getBoundingClientRect();
+    const y = Math.min(Math.max(ev.clientY, first.top + 1), last.bottom - 1);
+    target = rowsNow.find(r => { const b = r.getBoundingClientRect(); return y >= b.top && y <= b.bottom; }) || null;
+    clear();
+    if (!target) return;
+    const b = target.getBoundingClientRect();
+    after = y >= b.top + b.height / 2;
+    target.classList.add(after ? "drop-after" : "drop-before");
+  };
+  const end = ev => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end);
+    clear(); tr.classList.remove("dragging"); document.body.classList.remove("is-dragging");
+    if (ev.type === "pointerup" && target) { if (after) target.after(tr); else target.before(tr); onMoved(); }
+  };
+  window.addEventListener("pointermove", move, { passive: false }); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
+}
+// Save the rows' on-screen order as positions 1..n (only the rows that changed)
+async function saveRowOrder(tbody, rowItem, list, table) {
+  const ordered = [...tbody.children].map(r => rowItem.get(r)).filter(Boolean);
+  const changed = ordered.map((x, i) => [x, i + 1]).filter(([x, pos]) => x.position !== pos);
+  list.splice(0, list.length, ...ordered);
+  if (!changed.length) return;
+  changed.forEach(([x, pos]) => { x.position = pos; });
+  await Promise.all(changed.map(([x, pos]) => run(db.from(table).update({ position: pos }).eq("id", x.id))));
+  toast("הסדר נשמר");
+}
+
 function itemsTab(ctx) {
   const { p, items } = ctx;
   const cat = ITEM_CATEGORIES.find(c => c.key === state.itemCat) || ITEM_CATEGORIES[0];
@@ -526,17 +579,7 @@ function itemsTab(ctx) {
 
   const row = x => {
     const calcCells = [];
-    const handle = h("button", { class: "drag-handle", type: "button", title: "גרירה לשינוי הסדר", "aria-label": "גרירה לשינוי הסדר (או חצים למעלה ולמטה)", text: "⠿" });
-    handle.addEventListener("pointerdown", e => startDrag(e, tr));
-    handle.addEventListener("keydown", e => {
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-      e.preventDefault();
-      const sib = e.key === "ArrowUp" ? tr.previousElementSibling : tr.nextElementSibling;
-      if (!sib) return;
-      if (e.key === "ArrowUp") sib.before(tr); else sib.after(tr);
-      handle.focus(); saveOrder();
-    });
-    const tr = h("tr", {}, h("td", { class: "drag" }, handle), cat.cols.map(([f, , type]) => {
+    const tr = h("tr", {}, h("td", { class: "drag" }, rowDragHandle(() => tr, saveOrder)), cat.cols.map(([f, , type]) => {
       if (type === "calc") { const td = h("td", { class: "num", text: calcValue(x, f, cat.key) }); calcCells.push([td, f]); return td; }
       const save = async v => {
         const patch = { [f]: v };
@@ -555,44 +598,9 @@ function itemsTab(ctx) {
     return tr;
   };
 
-  // Drag a row by its handle (mouse or finger); the new order is saved as positions 1..n
+  // The new order is saved as positions 1..n
   const rowItem = new Map();
-  const saveOrder = async () => {
-    const ordered = [...tbody.children].map(r => rowItem.get(r)).filter(Boolean);
-    const changed = ordered.map((x, i) => [x, i + 1]).filter(([x, pos]) => x.position !== pos);
-    list.splice(0, list.length, ...ordered);
-    if (!changed.length) return;
-    changed.forEach(([x, pos]) => { x.position = pos; });
-    await Promise.all(changed.map(([x, pos]) => run(db.from("items").update({ position: pos }).eq("id", x.id))));
-    toast("הסדר נשמר");
-  };
-  // The row moves only on release: moving it mid-drag detaches the handle and the browser drops the drag.
-  const startDrag = (e, tr) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    let target = null, after = false;
-    const clear = () => tbody.querySelectorAll(".drop-before, .drop-after").forEach(r => r.classList.remove("drop-before", "drop-after"));
-    tr.classList.add("dragging"); document.body.classList.add("is-dragging");
-    const move = ev => {
-      ev.preventDefault();
-      const rowsNow = [...tbody.children].filter(r => r !== tr);
-      if (!rowsNow.length) return;
-      const first = rowsNow[0].getBoundingClientRect(), last = rowsNow.at(-1).getBoundingClientRect();
-      const y = Math.min(Math.max(ev.clientY, first.top + 1), last.bottom - 1);
-      target = rowsNow.find(r => { const b = r.getBoundingClientRect(); return y >= b.top && y <= b.bottom; }) || null;
-      clear();
-      if (!target) return;
-      const b = target.getBoundingClientRect();
-      after = y >= b.top + b.height / 2;
-      target.classList.add(after ? "drop-after" : "drop-before");
-    };
-    const end = ev => {
-      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end);
-      clear(); tr.classList.remove("dragging"); document.body.classList.remove("is-dragging");
-      if (ev.type === "pointerup" && target) { if (after) target.after(tr); else target.before(tr); saveOrder(); }
-    };
-    window.addEventListener("pointermove", move, { passive: false }); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
-  };
+  const saveOrder = () => saveRowOrder(tbody, rowItem, list, "items");
 
   // One supplier for the whole list (lighting): set in the header and copied to every row
   const headSupplier = () => (p.item_suppliers || {})[cat.key] || null;
@@ -857,20 +865,163 @@ function questionsTab({ questions, p }) {
       : h("div", { class: "empty" }, "אין שאלות פתוחות."));
 }
 
-function meetingsTab({ meetings, p }) {
+// Meetings: notes plus three lists (existing furniture, to buy, tasks) with photos.
+// A secret link lets the clients see the lists and add or change rows; only the CRM deletes.
+const CLIENT_PAGE = "https://shirleysella-jpg.github.io/designbyshirley-crm-site/list.html";
+const LIST_KINDS = [["existing", "ריהוט קיים"], ["buy", "לקנות"], ["task", "משימות"]];
+const BUY_STATUSES = ["לקנות", "בבחירה", "נרכש"];
+const LIST_COLS = {
+  existing: [["name", "שם הפריט"], ["room", "חלל"], ["size", "מידות"], ["notes", "הערות"]],
+  buy: [["status", "סטטוס"], ["name", "שם הפריט"], ["quantity", "כמות"], ["room", "חלל"], ["size", "מידות"], ["supplier", "חנות / ספק"], ["link", "קישור"], ["notes", "הערות"]],
+  task: [["done", "בוצע"], ["name", "משימה"], ["notes", "הערות"]]
+};
+const meetingImage = path => db.storage.from("meeting-images").getPublicUrl(path).data.publicUrl;
+
+// Phone photos are shrunk to 1600px before upload so the client page loads quickly
+function shrinkImage(file) {
+  return new Promise(resolve => {
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return resolve(file);
+    createImageBitmap(file).then(bmp => {
+      const s = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      if (s === 1 && file.size < 1500000) return resolve(file);
+      const c = h("canvas", { width: Math.round(bmp.width * s), height: Math.round(bmp.height * s) });
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      c.toBlob(b => resolve(b || file), "image/jpeg", 0.85);
+    }).catch(() => resolve(file));
+  });
+}
+
+function meetingText(m, list) {
+  const parts = [m.title || `סיכום הפגישה מ-${fmt(m.meet_date)}`];
+  if (m.notes) parts.push(m.notes);
+  for (const [kind, label] of LIST_KINDS) {
+    const rows = list.filter(x => x.kind === kind);
+    if (!rows.length) continue;
+    parts.push(label + ":\n" + rows.map(x => "• " + [x.name, kind === "buy" && x.quantity ? "× " + x.quantity : null, x.room, x.size, x.notes,
+      kind === "task" && x.done ? "בוצע" : null, kind === "buy" && x.status !== "לקנות" ? x.status : null].filter(Boolean).join(" – ")).join("\n"));
+  }
+  if (m.share_token) parts.push(`הרשימה המלאה עם התמונות:\n${CLIENT_PAGE}?t=${m.share_token}`);
+  return parts.join("\n\n");
+}
+
+async function meetingsTab({ meetings, p }) {
   const refresh = () => renderProject(p.id);
+  const ids = meetings.map(m => m.id);
+  const items = ids.length ? await run(db.from("meeting_items").select("*").in("meeting_id", ids).order("position").order("id")) : [];
   const date = dateField(today(), null, "תאריך הפגישה");
+  const title = h("input", { type: "text", placeholder: "למשל: פגישת תכנון העמדה" });
   const notes = h("textarea", { placeholder: "מה סוכם בפגישה" });
   return h("div", { class: "group" },
-    h("div", { class: "card" }, h("div", { class: "form-grid" }, field("תאריך", date), field("הערות", notes, "wide")),
+    h("div", { class: "card" }, h("div", { class: "form-grid" }, field("תאריך", date), field("שם הפגישה", title), field("הערות", notes, "wide")),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "שמירת פגישה", on: { click: async () => {
-        if (!notes.value.trim()) return; await run(db.from("meetings").insert({ project_id: p.id, meet_date: date.value || today(), notes: notes.value.trim() })); refresh();
+        if (!notes.value.trim() && !title.value.trim()) return;
+        await run(db.from("meetings").insert({ project_id: p.id, meet_date: date.value || today(), title: title.value.trim() || null, notes: notes.value.trim() || null })); refresh();
       } } }))),
-    meetings.map(m => h("div", { class: "card" },
-      h("div", { class: "row" }, h("h3", { class: "num", text: fmt(m.meet_date) }), h("span", { class: "spacer" }),
-        h("button", { class: "btn small ghost", type: "button", text: "העתקת סיכום לוואטסאפ", on: { click: () => copyText(`סיכום הפגישה מ-${fmt(m.meet_date)}:\n${m.notes || ""}`) } }),
-        confirmButton("מחיקה", () => run(db.from("meetings").delete().eq("id", m.id)).then(refresh))),
-      h("textarea", { value: m.notes || "", on: { change: e => run(db.from("meetings").update({ notes: e.target.value }).eq("id", m.id)) } }))));
+    meetings.map(m => meetingCard(m, items.filter(x => x.meeting_id === m.id), refresh)));
+}
+
+function meetingCard(m, list, refresh) {
+  const shareUrl = () => `${CLIENT_PAGE}?t=${m.share_token}`;
+  const shareBox = h("div", { class: "share-box" });
+  const paintShare = () => shareBox.replaceChildren(...(m.share_token ? [
+    h("p", { class: "small muted", text: "לינק סודי ללקוחות: כל מי שיש לו את הלינק יכול לראות את הרשימות, להוסיף שורות ולערוך. מחיקה רק מכאן." }),
+    h("div", { class: "row" },
+      h("button", { class: "btn small", type: "button", text: "העתקת הלינק", on: { click: () => copyText(shareUrl()) } }),
+      h("a", { class: "btn small ghost", href: shareUrl(), target: "_blank", rel: "noopener", text: "פתיחת הדף" }),
+      h("label", { class: "row small muted" }, "כותרת בדף:", h("input", { type: "text", value: m.share_title || "", placeholder: "למשל: נטע ואסף", "aria-label": "כותרת בדף הלקוח",
+        on: { change: async e => { m.share_title = e.target.value.trim() || null; await run(db.from("meetings").update({ share_title: m.share_title }).eq("id", m.id)); toast("נשמר"); } } })),
+      h("span", { class: "spacer" }),
+      confirmButton("ביטול הלינק", async () => { await run(db.from("meetings").update({ share_token: null }).eq("id", m.id)); m.share_token = null; paintShare(); toast("הלינק בוטל. מי שיש לו אותו כבר לא יכול להיכנס."); }, "btn small ghost"))
+  ] : [
+    h("div", { class: "row" }, h("button", { class: "btn small ghost", type: "button", text: "יצירת לינק סודי ללקוחות", on: { click: async () => {
+      const t = crypto.randomUUID();
+      await run(db.from("meetings").update({ share_token: t }).eq("id", m.id)); m.share_token = t; paintShare(); copyText(shareUrl());
+    } } }))
+  ]));
+  paintShare();
+
+  const lists = h("details", { class: "mlists", open: list.length > 0 },
+    h("summary", { text: list.length ? `רשימות (${list.length} שורות)` : "הוספת רשימות: ריהוט קיים, לקנות, משימות" }),
+    LIST_KINDS.map(([kind, label]) => meetingList(m, kind, label, list)));
+
+  return h("div", { class: "card" },
+    h("div", { class: "row" }, h("h3", { class: "num", text: fmt(m.meet_date) }),
+      h("input", { type: "text", class: "meeting-title", value: m.title || "", placeholder: "שם הפגישה", "aria-label": "שם הפגישה",
+        on: { change: e => { m.title = e.target.value.trim() || null; run(db.from("meetings").update({ title: m.title }).eq("id", m.id)); } } }),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn small ghost", type: "button", text: "העתקת סיכום לוואטסאפ", on: { click: () => copyText(meetingText(m, list)) } }),
+      confirmButton("מחיקה", async () => {
+        const paths = list.map(x => x.image_path).filter(Boolean);
+        if (paths.length) await db.storage.from("meeting-images").remove(paths);
+        await run(db.from("meetings").delete().eq("id", m.id)); refresh();
+      })),
+    h("textarea", { value: m.notes || "", placeholder: "מה סוכם בפגישה", on: { change: e => { m.notes = e.target.value; run(db.from("meetings").update({ notes: e.target.value }).eq("id", m.id)); } } }),
+    lists, shareBox);
+}
+
+// One list of a meeting as an editable table; rows are dragged to reorder
+function meetingList(m, kind, label, all) {
+  const list = all.filter(x => x.kind === kind);
+  const cols = LIST_COLS[kind];
+  const rowItem = new Map();
+  const saveOrder = () => saveRowOrder(tbody, rowItem, list, "meeting_items");
+  const save = async (x, patch) => { await run(db.from("meeting_items").update(patch).eq("id", x.id)); Object.assign(x, patch); };
+
+  const photoCell = x => {
+    const td = h("td", { class: "photo" });
+    const file = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", hidden: true, on: { change: async () => {
+      const f = file.files[0]; if (!f) return;
+      toast("מעלה תמונה…");
+      const blob = await shrinkImage(f);
+      const path = `${state.session.user.id}/${m.id}/${Date.now()}.jpg`;
+      const { error } = await db.storage.from("meeting-images").upload(path, blob, { contentType: blob.type || "image/jpeg" });
+      if (error) { fail(error); return; }
+      const old = x.image_path;
+      await save(x, { image_path: path });
+      if (old) db.storage.from("meeting-images").remove([old]);
+      paintPhoto(); toast("התמונה נשמרה");
+    } } });
+    const paintPhoto = () => td.replaceChildren(file,
+      h("button", { class: "thumb-btn", type: "button", title: x.image_path ? "החלפת תמונה" : "הוספת תמונה", on: { click: () => file.click() } },
+        x.image_path ? h("img", { src: meetingImage(x.image_path), alt: x.name || "", loading: "lazy" }) : "+ תמונה"),
+      x.image_path ? h("button", { class: "link small", type: "button", text: "הסרה", on: { click: async () => {
+        const old = x.image_path; await save(x, { image_path: null }); db.storage.from("meeting-images").remove([old]); paintPhoto();
+      } } }) : null);
+    paintPhoto();
+    return td;
+  };
+
+  const row = x => {
+    const tr = h("tr", {}, h("td", { class: "drag" }, rowDragHandle(() => tr, saveOrder)),
+      kind !== "task" ? photoCell(x) : null,
+      cols.map(([f, colLabel]) => {
+        if (f === "status") return h("td", {}, select(BUY_STATUSES, x.status, v => save(x, { status: v }), { "aria-label": colLabel }));
+        if (f === "done") return h("td", {}, h("input", { type: "checkbox", checked: x.done, "aria-label": colLabel, on: { change: e => save(x, { done: e.target.checked }) } }));
+        const input = h("input", { type: "text", value: x[f] ?? "", "aria-label": colLabel, dir: f === "link" ? "ltr" : null,
+          on: { change: e => save(x, { [f]: e.target.value.trim() || null }) } });
+        if (f === "link") return h("td", { class: "linkcell" }, input, x.link ? h("a", { href: x.link, target: "_blank", rel: "noopener", text: "פתיחה" }) : null);
+        return h("td", { class: f === "name" ? "wide-cell" : null }, input);
+      }),
+      h("td", {}, confirmButton("מחיקה", async () => {
+        await run(db.from("meeting_items").delete().eq("id", x.id));
+        if (x.image_path) db.storage.from("meeting-images").remove([x.image_path]);
+        tr.remove(); rowItem.delete(tr); list.splice(list.indexOf(x), 1); all.splice(all.indexOf(x), 1);
+      })));
+    rowItem.set(tr, x);
+    return tr;
+  };
+
+  const tbody = h("tbody", {}, list.map(row));
+  const addRow = async () => {
+    const created = await run(db.from("meeting_items").insert({ meeting_id: m.id, kind, position: list.length + 1 }).select().single());
+    list.push(created); all.push(created);
+    const tr = row(created); tbody.append(tr); tr.querySelector("input[type=text]")?.focus();
+  };
+  return h("section", { class: "mlist" },
+    h("h4", { text: label }),
+    h("div", { class: "tablewrap" }, h("table", { class: "items" },
+      h("thead", {}, h("tr", {}, h("th", {}), kind !== "task" ? h("th", { text: "תמונה" }) : null, cols.map(([, l]) => h("th", { text: l })), h("th", {}))), tbody)),
+    h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: kind === "task" ? "הוספת משימה" : "הוספת שורה", on: { click: addRow } })));
 }
 
 async function contactsTab({ pcontacts, p }) {

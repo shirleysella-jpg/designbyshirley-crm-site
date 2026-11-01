@@ -238,3 +238,15 @@ tr.dragging .drag-handle { cursor: grabbing; }
 tr.drop-before td { box-shadow: inset 0 3px 0 var(--oak); }
 tr.drop-after td { box-shadow: inset 0 -3px 0 var(--oak); }
 body.is-dragging, body.is-dragging * { user-select: none; cursor: grabbing !important; }
+/* Meeting lists */
+.meeting-title { flex: 1 1 220px; font-weight: 600; }
+.mlists { border-top: 1px solid var(--line); padding-top: 10px; }
+.mlists > summary { cursor: pointer; font-weight: 600; color: var(--oak); }
+.mlist { display: grid; gap: 6px; margin-top: 14px; }
+.mlist h4 { margin: 0; font-family: var(--display); font-weight: 500; font-size: 17px; }
+td.photo { width: 72px; white-space: nowrap; }
+td.wide-cell input[type=text] { min-width: 170px; }
+.thumb-btn { width: 56px; height: 56px; border: 1px dashed var(--line); border-radius: 6px; background: var(--sunk); color: var(--oak); font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; overflow: hidden; display: inline-grid; place-items: center; vertical-align: middle; }
+.thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.share-box { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.share-box input { width: 160px; }
