@@ -234,6 +234,24 @@ async function setFinished(p, finish) {
   route();
 }
 
+// Changing the type swaps the stages for the new type's template (change_project_type keeps what was already marked)
+const TYPE_CHANGE_NOTE = "שינוי סוג הפרויקט מחליף את השלבים בשלבים של הסוג החדש. משימות שכבר סימנת עוברות איתן.";
+const typeChangedMessage = (row, kept) => `הסוג שונה ל"${TYPES[row.project_type]}" והשלבים הוחלפו` + (kept ? `. ${kept} משימות בלי מקום מתאים עברו לשלב "משימות מהסוג הקודם"` : "");
+function typePanel(p) {
+  const pick = select(Object.entries(TYPES), p.project_type, null, { "aria-label": "סוג פרויקט" });
+  openPanel("שינוי סוג הפרויקט", h("div", { class: "form-grid" }, field("סוג פרויקט", pick, "wide"), h("p", { class: "small muted wide", text: TYPE_CHANGE_NOTE })), close => [
+    h("button", { class: "btn", type: "button", text: "שמירה", on: { click: async () => {
+      if (pick.value === p.project_type) { close(); return; }
+      const kept = await run(db.rpc("change_project_type", { p_project: p.id, p_type: pick.value }));
+      close(); toast(typeChangedMessage({ project_type: pick.value }, kept)); renderProject(p.id);
+    } } })]);
+}
+async function setStatus(p, status) {
+  const patch = (status === FINISHED) !== (p.status === FINISHED) ? finishPatch(p, status === FINISHED, status) : { status };
+  await run(db.from("projects").update(patch).eq("id", p.id));
+  toast("הסטטוס עודכן"); renderProject(p.id);
+}
+
 async function renderProjects() {
   const projects = await run(db.from("projects").select("*, stages(id,name,position,done_at), tasks(id,status,due_date)").order("number", { ascending: false, nullsFirst: false }));
   const filters = ["פעילים", ...PROJECT_STATUSES, "הכול"];
@@ -293,7 +311,7 @@ function projectForm(p, all = []) {
     field("יעד לסיום", f.target_date), field("תקציב הלקוח", f.budget), field("שם התיקייה ב-MY PROJECTS\\NEW", f.folder_name, "wide"),
     field("הערות", f.notes, "wide"),
     isNew ? h("p", { class: "small muted wide", text: "השלבים והמשימות ייפתחו אוטומטית לפי סוג הפרויקט." })
-          : h("p", { class: "small muted wide", text: "שינוי סוג הפרויקט לא משנה שלבים שכבר נפתחו. מחיקת פרויקט מוחקת אותו רק מהמערכת, לא מהמחשב." }));
+          : h("p", { class: "small muted wide", text: TYPE_CHANGE_NOTE + " מחיקת פרויקט מוחקת אותו רק מהמערכת, לא מהמחשב." }));
   openPanel(isNew ? "פרויקט חדש" : "עריכת פרטי הפרויקט", body, close => [
     h("button", { class: "btn", type: "button", text: isNew ? "פתיחת הפרויקט" : "שמירה", on: { click: async () => {
       if (!f.name.value.trim()) { f.name.focus(); return; }
@@ -309,8 +327,10 @@ function projectForm(p, all = []) {
       } else {
         // Choosing "הסתיים" here works like the finish button (and choosing another status reopens it)
         if ((row.status === FINISHED) !== (p.status === FINISHED)) Object.assign(row, finishPatch(p, row.status === FINISHED, row.status));
+        const kept = row.project_type !== p.project_type ? await run(db.rpc("change_project_type", { p_project: p.id, p_type: row.project_type })) : null;
+        delete row.project_type;
         await run(db.from("projects").update(row).eq("id", p.id));
-        close(); toast("נשמר"); route();
+        close(); toast(kept == null ? "נשמר" : typeChangedMessage(row, kept)); route();
       }
     } } }),
     isNew ? null : confirmButton("מחיקת הפרויקט מהמערכת", async () => {
@@ -340,8 +360,9 @@ async function renderProject(id) {
   const path = p.folder_name ? PROJECTS_ROOT + p.folder_name : null;
 
   const facts = h("div", { class: "facts" },
-    h("span", {}, "סוג: ", h("b", { text: TYPES[p.project_type] })),
-    h("span", {}, "סטטוס: ", h("b", { text: p.status === FINISHED && p.finished_at ? `הסתיים ב-${fmt(p.finished_at)}` : p.status })),
+    h("span", {}, "סוג: ", h("b", { text: TYPES[p.project_type] }), " ", h("button", { class: "link small", type: "button", text: "שינוי", on: { click: () => typePanel(p) } })),
+    h("span", { class: "fact-status" }, "סטטוס: ", select(PROJECT_STATUSES, p.status, v => setStatus(p, v), { "aria-label": "סטטוס הפרויקט" }),
+      p.status === FINISHED && p.finished_at ? h("span", { class: "muted num", text: ` ב-${fmt(p.finished_at)}` }) : null),
     p.city || p.address ? h("span", {}, "כתובת: ", h("b", { text: [p.address, p.city].filter(Boolean).join(", ") })) : null,
     p.start_date ? h("span", {}, "התחלה: ", h("b", { class: "num", text: fmt(p.start_date) })) : null,
     p.handover_date ? h("span", {}, "מסירה: ", h("b", { class: "num", text: fmt(p.handover_date) })) : null,
