@@ -501,7 +501,7 @@ const ITEM_CATEGORIES = [
     ["quantity", "מ\"ר נטו", "num"], ["waste_pct", "% פחת", "num"], ["_order", "מ\"ר להזמנה", "calc"], ["unit_price", "מחיר למ\"ר", "num"], C.total, C.status, C.notes] },
   { key: "sanitary", label: "כלים סניטריים וארונות רחצה", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם / מק\"ט"], C.supplier, ["color", "גימור / גוון"], ["size", "מידה"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
   { key: "lighting", label: "גופי תאורה", headerSupplier: true, cols: [C.room, C.area, ["name", "סוג הגוף"], ["model", "דגם"], ["color", "גוון הגוף"], ["size", "מידה / גוון אור"], C.qty, C.price, C.total, C.status, C.link, C.notes] },
-  { key: "colors", label: "גוונים לקירות", cols: [C.room, C.area, ["name", "קיר"], ["model", "קוד גוון"], ["color", "שם הגוון"], ["supplier", "חברה"], ["size", "סוג צבע / גמר"], C.notes] },
+  { key: "colors", label: "גוונים לקירות", cols: [C.room, C.area, ["name", "קיר"], ["hex", "גוון", "swatch"], ["model", "קוד גוון"], ["color", "שם הגוון"], ["supplier", "חברה"], ["size", "סוג צבע / גמר"], C.link, C.notes] },
   { key: "carpentry", label: "נגרות", cols: [["model", "סימון"], C.room, C.area, ["name", "תיאור"], ["color", "חזית וגוון"], ["size", "מידות"], ["supplier", "נגר"], C.qty, C.price, C.total, C.status, C.notes] },
   { key: "furniture", label: "ריהוט", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "בד / גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
   { key: "decor", label: "טקסטיל ואקססוריז", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
@@ -589,6 +589,9 @@ function itemsTab(ctx) {
       };
       if (type === "status") return h("td", {}, select(ITEM_STATUSES, x.status, save, { "aria-label": "סטטוס" }));
       if (type === "date") return h("td", {}, dateField(x[f], v => save(v)));
+      // A small square in the paint's color; clicking it opens the color picker
+      if (type === "swatch") return h("td", { class: "swatch-cell" }, h("input", { type: "color", class: "color-swatch" + (x[f] ? "" : " is-empty"), value: x[f] || "#ffffff",
+        title: x[f] || "בחירת גוון", "aria-label": "גוון", on: { change: async e => { const v = e.target.value.toUpperCase(); await save(v); e.target.classList.remove("is-empty"); e.target.title = v; } } }));
       const input = h("input", { type: type === "num" ? "number" : type === "date" ? "date" : "text", step: type === "num" ? "any" : null, value: x[f] ?? "",
         "aria-label": f, on: { change: e => save(e.target.value === "" ? null : type === "num" ? Number(e.target.value) : e.target.value) } });
       if (type === "link") return h("td", { class: "linkcell" }, input, x.link ? h("a", { href: x.link, target: "_blank", rel: "noopener", text: "פתיחה" }) : null);
@@ -711,7 +714,8 @@ function clientView(p, cat, list) {
     + `<th class="note">הערות</th>` + (hasLinks ? "<th></th>" : "");
   const oneGroup = groups.length === 1 && groups[0].room === "כללי";
   const body = groups.map(g => `<tbody>${oneGroup ? "" : `<tr class="room"><td colspan="${cols.length + 1 + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`}`
-    + g.items.map(x => "<tr>" + cols.map(([f, , type]) => `<td class="${priceCols.includes(f) ? "price " : ""}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
+    + g.items.map(x => "<tr>" + cols.map(([f, , type]) => type === "swatch" ? `<td>${x[f] ? `<span class="sw" style="background:${esc(x[f])}"></span>` : ""}</td>`
+      : `<td class="${priceCols.includes(f) ? "price " : ""}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
       + `<td class="note">${esc(x.notes)}</td>` + (hasLinks ? `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">לצפייה</a>` : ""}</td>` : "") + "</tr>").join("")
     + "</tbody>").join("");
   const total = list.reduce((a, x) => a + (itemTotal(x, cat.key) || 0), 0);
@@ -733,6 +737,7 @@ function clientView(p, cat, list) {
   tr.room td { font-family: "Frank Ruhl Libre", serif; font-size: 19px; color: var(--oak); padding-top: 22px; border-bottom: 1px solid var(--oak); }
   td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.note { color: var(--muted); font-size: 13px; }
+  .sw { display: inline-block; width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--line); vertical-align: middle; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   a { color: var(--oak); }
   .total { text-align: left; margin-top: 18px; font-size: 17px; }
   footer { margin-top: 40px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; }
