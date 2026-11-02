@@ -258,3 +258,16 @@ input.color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
 input.color-swatch::-webkit-color-swatch { border: 0; border-radius: 5px; }
 input.color-swatch::-moz-color-swatch { border: 0; border-radius: 5px; }
 input.color-swatch.is-empty { opacity: .35; border-style: dashed; }
+
+/* Deleting several tasks: a red pick box before the done box, and a bar that counts the picked ones */
+.task.picking { grid-template-columns: 26px 26px minmax(160px, 1fr) auto; }
+.task.picking .extra { grid-column: 3 / -1; }
+.task input.pick { accent-color: var(--late); }
+.task.is-picked { background: var(--late-soft); }
+.pick-start { justify-content: flex-start; }
+.pick-bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 10px 14px; border: 1px solid var(--late); border-radius: 10px; background: var(--late-soft); color: var(--late); }
+@media (max-width: 640px) {
+  .task.picking { grid-template-columns: 26px 26px 1fr; }
+  .task.picking .ctrls { grid-column: 3; }
+}

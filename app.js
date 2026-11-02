@@ -221,9 +221,23 @@ function projectSummary(p) {
   };
 }
 
+// Finishing remembers the status it came from, so reopening puts the project back where it was
+const FINISHED = "הסתיים";
+const filterLabel = f => f === FINISHED ? "הסתיימו" : f;
+function finishPatch(p, finish, status = p.status) {
+  return finish ? { status: FINISHED, finished_at: p.finished_at || today(), status_before_finish: p.status === FINISHED ? p.status_before_finish : p.status }
+    : { status: status === FINISHED ? (p.status_before_finish || "פעיל, בביצוע") : status, finished_at: null, status_before_finish: null };
+}
+async function setFinished(p, finish) {
+  await run(db.from("projects").update(finishPatch(p, finish)).eq("id", p.id));
+  toast(finish ? "הפרויקט עבר לפרויקטים שהסתיימו" : "הפרויקט חזר לפרויקטים הפעילים");
+  route();
+}
+
 async function renderProjects() {
   const projects = await run(db.from("projects").select("*, stages(id,name,position,done_at), tasks(id,status,due_date)").order("number", { ascending: false, nullsFirst: false }));
   const filters = ["פעילים", ...PROJECT_STATUSES, "הכול"];
+  const finishedCount = projects.filter(p => p.status === FINISHED).length;
   const shown = projects.filter(p => state.projectFilter === "הכול" ? true
     : state.projectFilter === "פעילים" ? p.status.startsWith("פעיל") : p.status === state.projectFilter);
 
@@ -231,7 +245,8 @@ async function renderProjects() {
     const s = projectSummary(p);
     return h("a", { class: "pcard", href: `#/p/${p.id}` },
       h("div", { class: "title" }, h("span", { class: "no", text: p.number ?? "–" }), h("span", { class: "name", text: p.name })),
-      h("div", { class: "row" }, h("span", { class: "pill oak", text: TYPES[p.project_type] }), h("span", { class: "pill", text: p.status })),
+      h("div", { class: "row" }, h("span", { class: "pill oak", text: TYPES[p.project_type] }),
+        h("span", { class: "pill" + (p.status === FINISHED ? " done" : ""), text: p.status === FINISHED && p.finished_at ? `הסתיים ${fmt(p.finished_at)}` : p.status })),
       h("p", { class: "small" }, h("span", { class: "muted", text: "שלב נוכחי: " }), s.current),
       h("div", { class: "bar", "aria-label": `${s.pct}% הושלם` }, h("i", { style: `width:${s.pct}%` })),
       h("div", { class: "row small" },
@@ -244,7 +259,8 @@ async function renderProjects() {
     h("div", { class: "page-head" },
       h("div", {}, h("h1", { text: "פרויקטים" }), h("p", { class: "sub num", text: `${projects.filter(p => p.status.startsWith("פעיל")).length} פעילים` })),
       h("button", { class: "btn", type: "button", text: "פרויקט חדש", on: { click: () => projectForm(null, projects) } })),
-    h("div", { class: "filters" }, filters.map(f => h("button", { class: "chip" + (f === state.projectFilter ? " on" : ""), type: "button", text: f,
+    h("div", { class: "filters" }, filters.map(f => h("button", { class: "chip" + (f === state.projectFilter ? " on" : ""), type: "button",
+      text: filterLabel(f) + (f === FINISHED && finishedCount ? ` ${finishedCount}` : ""),
       on: { click: () => { state.projectFilter = f; renderProjects(); } } }))),
     list);
 }
@@ -291,6 +307,8 @@ function projectForm(p, all = []) {
         await run(db.rpc("instantiate_project", { p_project: created.id }));
         close(); toast("הפרויקט נפתח עם כל השלבים"); location.hash = `#/p/${created.id}`;
       } else {
+        // Choosing "הסתיים" here works like the finish button (and choosing another status reopens it)
+        if ((row.status === FINISHED) !== (p.status === FINISHED)) Object.assign(row, finishPatch(p, row.status === FINISHED, row.status));
         await run(db.from("projects").update(row).eq("id", p.id));
         close(); toast("נשמר"); route();
       }
@@ -323,7 +341,7 @@ async function renderProject(id) {
 
   const facts = h("div", { class: "facts" },
     h("span", {}, "סוג: ", h("b", { text: TYPES[p.project_type] })),
-    h("span", {}, "סטטוס: ", h("b", { text: p.status })),
+    h("span", {}, "סטטוס: ", h("b", { text: p.status === FINISHED && p.finished_at ? `הסתיים ב-${fmt(p.finished_at)}` : p.status })),
     p.city || p.address ? h("span", {}, "כתובת: ", h("b", { text: [p.address, p.city].filter(Boolean).join(", ") })) : null,
     p.start_date ? h("span", {}, "התחלה: ", h("b", { class: "num", text: fmt(p.start_date) })) : null,
     p.handover_date ? h("span", {}, "מסירה: ", h("b", { class: "num", text: fmt(p.handover_date) })) : null,
@@ -343,7 +361,9 @@ async function renderProject(id) {
       h("div", { class: "row" },
         path ? h("button", { class: "btn ghost", type: "button", text: "העתקת נתיב התיקייה", on: { click: () => copyText(path) } }) : null,
         h("button", { class: "btn ghost", type: "button", text: "שינוי בתכנון", on: { click: () => changePanel(ctx) } }),
-        h("button", { class: "btn ghost", type: "button", text: "עריכת פרטים", on: { click: () => projectForm(p) } }))),
+        h("button", { class: "btn ghost", type: "button", text: "עריכת פרטים", on: { click: () => projectForm(p) } }),
+        h("button", { class: "btn ghost", type: "button", text: p.status === FINISHED ? "החזרה לפרויקטים הפעילים" : "העברה לפרויקטים שהסתיימו",
+          on: { click: () => setFinished(p, p.status !== FINISHED) } }))),
     facts,
     p.notes ? h("p", { class: "muted", text: p.notes }) : null,
     h("div", { class: "bar" }, h("i", { style: `width:${s.pct}%` })),
@@ -352,8 +372,36 @@ async function renderProject(id) {
     bodyEl);
 }
 
+// Deleting several tasks at once: a pick mode per page (remembered by its address), with a bar that counts and deletes
+const picking = () => state.picking === (location.hash || "#/");
+function pickBar(rerender, afterDelete) {
+  if (!picking()) return h("div", { class: "row pick-start" }, h("button", { class: "btn small ghost", type: "button", text: "בחירת כמה משימות למחיקה",
+    on: { click: () => { state.picking = location.hash || "#/"; state.picked = new Set(); rerender(); } } }));
+  const count = h("b", { class: "num", text: "0" });
+  const del = confirmButton("מחיקת המשימות שנבחרו", async () => {
+    const ids = [...state.picked];
+    if (!ids.length) { toast("לא נבחרו משימות"); return; }
+    await run(db.from("tasks").delete().in("id", ids));
+    state.picking = null; state.picked = new Set();
+    toast(`נמחקו ${ids.length} משימות`);
+    await afterDelete?.(ids); rerender();
+  });
+  state.pickCount = n => { count.textContent = n; };
+  return h("div", { class: "pick-bar" }, h("span", {}, "נבחרו ", count, " משימות"), h("span", { class: "spacer" }), del,
+    h("button", { class: "btn small ghost", type: "button", text: "ביטול", on: { click: () => { state.picking = null; state.picked = new Set(); rerender(); } } }));
+}
+
 function taskRow(t, opts = {}) {
   const row = h("div", { class: "task" + (isDone(t) ? " is-done" : "") + (t.status === "לא רלוונטי" ? " is-na" : "") + (t.priority ? ` marked m${t.priority}` : "") });
+  if (picking()) {
+    const pick = h("input", { type: "checkbox", class: "pick", checked: state.picked.has(t.id), "aria-label": "בחירה למחיקה: " + t.name });
+    pick.addEventListener("change", () => {
+      if (pick.checked) state.picked.add(t.id); else state.picked.delete(t.id);
+      row.classList.toggle("is-picked", pick.checked); state.pickCount?.(state.picked.size);
+    });
+    row.classList.add("picking");
+    row.append(pick);
+  }
   const cb = h("input", { type: "checkbox", checked: isDone(t), "aria-label": "בוצע: " + t.name });
   cb.addEventListener("change", async () => { await updateTask(t, { status: cb.checked ? "הושלם" : "לא התחיל" }); opts.onChange?.(t); });
   const name = h("div", { class: "tname" }, t.name, t.optional ? h("span", { class: "opt-mark", text: "לפעמים" }) : null,
@@ -405,7 +453,12 @@ function stagesTab(ctx) {
   if (!stages.length) return h("div", { class: "empty" }, "אין שלבים בפרויקט.");
   const current = stages.find(s => !s.done_at);
   if (state.openStagesFor !== p.id) { state.openStagesFor = p.id; state.openStages = new Set(current ? [current.id] : []); }
-  return h("div", { class: "group" }, stages.map((s, i) => {
+  // After a bulk delete, a stage whose remaining tasks are all done closes (and the other way round)
+  const bar = pickBar(() => renderProject(p.id), async ids => {
+    const gone = new Set(ids);
+    for (const s of stages) await syncStage(s, tasks.filter(t => t.stage_id === s.id && !gone.has(t.id)), ctx);
+  });
+  return h("div", { class: "group" }, bar, stages.map((s, i) => {
     const st = tasks.filter(t => t.stage_id === s.id);
     const relevant = st.filter(t => t.status !== "לא רלוונטי");
     const done = relevant.filter(isDone).length;
@@ -1067,14 +1120,17 @@ function folderTab({ p }) {
 // Today & this week -------------------------------------------------------------
 async function renderToday() {
   const t = today(), week = addDays(t, 7), lastDay = addDays(t, 6);
-  const [tasks, doneInWeek, projects, pays, deliveries, reminders] = await Promise.all([
-    run(db.from("tasks").select("*, projects(id, name, number)").not("status", "in", "(\"הושלם\",\"לא רלוונטי\")").order("due_date", { nullsFirst: false })),
+  // Tasks left open in a finished project stay in the project, not in the week
+  const [openTasks, doneInWeek, allProjects, pays, deliveries, reminders] = await Promise.all([
+    run(db.from("tasks").select("*, projects(id, name, number, status)").not("status", "in", "(\"הושלם\",\"לא רלוונטי\")").order("due_date", { nullsFirst: false })),
     run(db.from("tasks").select("*, projects(id, name, number)").eq("status", "הושלם").gte("due_date", t).lte("due_date", lastDay)),
-    run(db.from("projects").select("id, number, name").order("number", { ascending: false, nullsFirst: false })),
+    run(db.from("projects").select("id, number, name, status").order("number", { ascending: false, nullsFirst: false })),
     run(db.from("payments").select("*, projects(id, name, number)").is("paid_at", null).not("due_date", "is", null).lte("due_date", week).order("due_date")),
     run(db.from("items").select("*, projects(id, name, number)").in("status", ["נבחר", "הוזמן"]).not("delivery_date", "is", null).lte("delivery_date", week).order("delivery_date")),
     run(db.from("payments").select("*, projects(id, name, number)").eq("remind", true).is("paid_at", null).order("due_date", { nullsFirst: false }))
   ]);
+  const tasks = openTasks.filter(x => x.projects?.status !== FINISHED);
+  const projects = allProjects.filter(pr => pr.status !== FINISHED);
   const payLabel = x => x.kind === "commission" ? `עמלה: ${[x.supplier, x.name].filter(Boolean).join(" · ")}` : [x.payer, x.name].filter(Boolean).join(" · ");
   const label = x => x.projects ? h("a", { href: `#/p/${x.projects.id}`, text: `${x.projects.number ? x.projects.number + " · " : ""}${x.projects.name}` }) : "משימה כללית";
   const payWhere = x => x.projects ? label(x) : "בלי פרויקט";
@@ -1123,6 +1179,7 @@ async function renderToday() {
       h("div", { class: "card tablewrap" }, h("table", { class: "pays" }, h("tbody", {}, reminders.map(x => h("tr", { class: "pay-row is-remind" },
         h("td", {}, payWhere(x)), h("td", { text: payLabel(x) }), h("td", { class: "num", text: money(x.amount) }),
         h("td", { class: "num", text: x.due_date ? fmt(x.due_date) : "" }))))))) : null,
+    pickBar(refresh),
     h("div", { class: "week-plan" }, [0, 1, 2, 3, 4, 5, 6].map(dayCard)),
     h("p", { class: "small muted", text: "משימה שלא סומנה כבוצעה עוברת להיום, עם התאריך שבו תוכננה. כדי להעביר משימה ליום אחר, משנים לה את התאריך." }),
     section("ממתין לאחרים", waiting, "wait"),
@@ -1153,8 +1210,9 @@ async function renderGeneral() {
     h("div", { class: "page-head" }, h("div", {}, h("h1", { text: "משימות כלליות" }), h("p", { class: "sub", text: "עסק, חשבונות, שיווק, אישי וילדים. בנפרד מהפרויקטים." }))),
     h("div", { class: "card" }, h("div", { class: "addline" }, name, cat, due, h("button", { class: "btn small", type: "button", text: "הוספה", on: { click: add } }))),
     h("div", { class: "filters" }, filters.map(f => h("button", { class: "chip" + (f === state.generalFilter ? " on" : ""), type: "button", text: f, on: { click: () => { state.generalFilter = f; renderGeneral(); } } }))),
+    shown.length ? pickBar(refresh) : null,
     open.length ? h("div", { class: "card tasks" }, open.map(x => taskRow(x, { ...opts, projectLabel: x.category || "" }))) : h("div", { class: "empty" }, "אין משימות פתוחות."),
-    closed.length ? h("details", {}, h("summary", { class: "muted", text: `הושלמו (${closed.length})` }), h("div", { class: "card tasks" }, closed.map(x => taskRow(x, opts)))) : null);
+    closed.length ? h("details", { open: picking() }, h("summary", { class: "muted", text: `הושלמו (${closed.length})` }), h("div", { class: "card tasks" }, closed.map(x => taskRow(x, opts)))) : null);
 }
 
 // Monthly income -----------------------------------------------------------------
