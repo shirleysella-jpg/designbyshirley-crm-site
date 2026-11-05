@@ -579,7 +579,8 @@ const ITEM_CATEGORIES = [
   { key: "carpentry", label: "נגרות", cols: [["model", "סימון"], C.room, C.area, ["name", "תיאור"], ["color", "חזית וגוון"], ["size", "מידות"], ["supplier", "נגר"], C.qty, C.price, C.total, C.status, C.notes] },
   { key: "furniture", label: "ריהוט", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "בד / גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
   { key: "decor", label: "טקסטיל ואקססוריז", cols: [C.room, C.area, ["name", "פריט"], ["model", "דגם"], C.supplier, ["size", "מידות"], ["color", "גוון"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
-  { key: "kitchen", label: "נלווים למטבח", cols: [["name", "פריט (משטח, כיור, ברז, מכשיר)"], ["model", "דגם"], C.supplier, ["size", "מידה"], ["color", "גוון / גימור"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] }
+  { key: "kitchen", label: "נלווים למטבח", cols: [["name", "פריט (משטח, כיור, ברז, מכשיר)"], ["model", "דגם"], C.supplier, ["size", "מידה"], ["color", "גוון / גימור"], C.qty, C.price, C.total, C.status, C.delivery, C.link, C.notes] },
+  { key: "contractor", label: "עבודות קבלן", headerSupplier: true, supplierLabel: "קבלן", cols: [["model", "מס'"], ["name", "תיאור עבודה"], ["size", "יחידת מידה"], C.qty, C.price, C.total, C.status, C.notes] }
 ];
 // Rounded up to 2 decimals; the inner round strips float noise (39 × 1.1 = 42.900000000000006)
 function orderQty(x) { return x.quantity == null ? null : Math.ceil(Math.round(Number(x.quantity) * (1 + Number(x.waste_pct || 0) / 100) * 1e6) / 1e4) / 100; }
@@ -681,8 +682,8 @@ function itemsTab(ctx) {
 
   // One supplier for the whole list (lighting): set in the header and copied to every row
   const headSupplier = () => (p.item_suppliers || {})[cat.key] || null;
-  const supplierField = cat.headerSupplier ? h("label", { class: "row small head-supplier" }, "ספק:",
-    h("input", { type: "text", value: headSupplier() || "", placeholder: "שם הספק", "aria-label": "ספק לכל הרשימה", on: { change: async e => {
+  const supplierField = cat.headerSupplier ? h("label", { class: "row small head-supplier" }, `${cat.supplierLabel || "ספק"}:`,
+    h("input", { type: "text", value: headSupplier() || "", placeholder: `שם ה${cat.supplierLabel || "ספק"}`, "aria-label": "ספק לכל הרשימה", on: { change: async e => {
       const v = e.target.value.trim() || null;
       const all = { ...(p.item_suppliers || {}), [cat.key]: v };
       await run(db.from("projects").update({ item_suppliers: all }).eq("id", p.id)); p.item_suppliers = all;
@@ -831,7 +832,7 @@ function clientView(p, cat, list) {
 <div class="page">
   <div class="brand">designbyshirley</div>
   <h1>${esc(cat.label)}</h1>
-  <p class="sub">${esc(`${p.name}${p.number ? " · פרויקט " + p.number : ""}`)}${supplier ? " · ספק: " + esc(supplier) : ""} · ${esc(fmt(today()))}</p>
+  <p class="sub">${esc(`${p.name}${p.number ? " · פרויקט " + p.number : ""}`)}${supplier ? ` · ${cat.supplierLabel || "ספק"}: ` + esc(supplier) : ""} · ${esc(fmt(today()))}</p>
   <table><thead><tr>${head}</tr></thead>${body}</table>
   ${total ? `<p class="total">סה"כ: <b>${esc(money(total))}</b></p>` : ""}
   <footer><span>designbyshirley · שירלי סלע שמש</span><span>instagram.com/designbyshirley</span></footer>
@@ -847,7 +848,7 @@ function exportItems(p, items) {
     const list = items.filter(x => x.category === cat.key);
     if (!list.length) continue;
     lines.push(esc(cat.label));
-    if (cat.headerSupplier && (p.item_suppliers || {})[cat.key]) lines.push(esc("ספק: " + p.item_suppliers[cat.key]));
+    if (cat.headerSupplier && (p.item_suppliers || {})[cat.key]) lines.push(esc(`${cat.supplierLabel || "ספק"}: ` + p.item_suppliers[cat.key]));
     lines.push(cat.cols.map(c => esc(c[1])).join(","));
     for (const x of list) lines.push(cat.cols.map(([f, , type]) => esc(type === "calc" ? (f === "_order" ? orderQty(x) : itemTotal(x, cat.key)) : x[f])).join(","));
     lines.push("");
