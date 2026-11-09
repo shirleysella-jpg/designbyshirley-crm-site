@@ -53,7 +53,9 @@ h3{font-size:14px;letter-spacing:.06em;color:var(--oak);font-weight:700;margin:2
 .sw{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-1px;margin-inline-end:5px}
 .line-note{font-size:14px;color:var(--muted);margin-top:4px}
 .end{display:flex;align-items:center;gap:14px;justify-self:end}
-.price{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.price{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;display:grid;text-align:left}
+.price small{font-weight:400;font-size:13px;color:var(--muted)}
+.qty-n{color:var(--ink);font-weight:600}
 .go{font:600 14px var(--body);padding:7px 15px;border-radius:999px;border:1px solid var(--oak);color:var(--oak);text-decoration:none;white-space:nowrap}
 .go:hover{background:var(--oak-soft)}
 .total{margin:12px 0 0;text-align:left;color:var(--muted);font-size:15px}
@@ -89,14 +91,18 @@ function times(s){return String(s).replace(/(\d)\s*[xX×]\s*(\d)/g,'$1×$2')}
 function showState(msg){app.innerHTML='<p class="wrap state">'+esc(msg)+'</p>'}
 
 function row(x,prices,sup){
-  var q=x.quantity!=null&&Number(x.quantity)!==1?' <span class="qty">× '+esc(Number(x.quantity))+'</span>':'';
+  var q='',n=x.quantity==null?null:Number(x.quantity);
   var meta=[];
+  if(n!=null)meta.push('כמות: <b class="qty-n">'+esc(n)+'</b>');
   if(x.area)meta.push(esc(x.area));
   if(x.size)meta.push('<span dir="auto">'+esc(times(x.size))+'</span>');
   if(x.color||x.hex)meta.push((x.hex?'<span class="sw" style="background:'+esc(x.hex)+'"></span>':'')+esc(x.color||''));
   if(x.supplier&&x.supplier!==sup)meta.push(esc(x.supplier));
   var link=safeLink(x.link),end='';
-  if(prices&&x.unit_price!=null)end+='<span class="price">'+money(x.unit_price)+'</span>';
+  // Same math as the CRM table: unit price × quantity (no quantity counts as one)
+  if(prices&&x.unit_price!=null)end+='<span class="price">'+(n!=null&&n!==1
+    ?money(Number(x.unit_price)*n)+'<small>'+money(x.unit_price)+' ליח\' × '+esc(n)+'</small>'
+    :money(x.unit_price))+'</span>';
   if(link)end+='<a class="go" href="'+esc(link)+'" target="_blank" rel="noopener">למוצר ↗</a>';
   return '<li><div><div class="item-name">'+esc(x.name||x.model||'')+q+'</div>'+
     (x.name&&x.model?'<div class="model">'+esc(x.model)+'</div>':'')+
