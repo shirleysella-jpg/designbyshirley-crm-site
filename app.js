@@ -703,6 +703,7 @@ function itemsTab(ctx) {
   return h("div", { class: "group" },
     h("div", { class: "filters" }, ITEM_CATEGORIES.map(c => h("button", { class: "chip" + (c.key === cat.key ? " on" : ""), type: "button", text: c.label + (counts[c.key] ? ` ${counts[c.key]}` : ""),
       on: { click: () => { state.itemCat = c.key; renderProject(p.id); } } }))),
+    itemsShareCard(p, counts),
     h("div", { class: "card" },
       h("div", { class: "row" }, h("h3", { text: cat.label }), supplierField, h("span", { class: "spacer" }),
         hasPrice ? h("span", { class: "small muted" }, "סה\"כ: ", totalEl) : null,
@@ -713,6 +714,48 @@ function itemsTab(ctx) {
         h("thead", {}, h("tr", {}, h("th", {}), cat.cols.map(([, label]) => h("th", { text: label })), h("th", {}))), tbody)),
       h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "הוספת שורה", on: { click: addRow } }))),
     quotesCard(ctx, cat));
+}
+
+// Read-only client link for the whole materials list (items.html). Shirley picks the categories,
+// and whether prices and notes show. Turning the link off makes the old address stop working.
+const ITEMS_PAGE = "https://shirleysella-jpg.github.io/designbyshirley-crm-site/items.html";
+function itemsShareCard(p, counts) {
+  const url = () => `${ITEMS_PAGE}?t=${p.items_share_token}`;
+  const save = async patch => { await run(db.from("projects").update(patch).eq("id", p.id)); Object.assign(p, patch); };
+  const box = h("details", { class: "card share-items", open: !!state.itemsShareOpen });
+  box.addEventListener("toggle", () => { state.itemsShareOpen = box.open; });
+  const paint = () => {
+    const cats = p.items_share_cats || [];
+    const body = p.items_share_token ? [
+      h("p", { class: "small muted", text: "כל מי שיש לו את הלינק רואה את הקטגוריות שסימנת, ויכול ללחוץ על הקישורים למוצרים. לשנות את הרשימה אפשר רק מכאן." }),
+      h("div", { class: "row" },
+        h("button", { class: "btn small", type: "button", text: "העתקת הלינק", on: { click: () => copyText(url()) } }),
+        h("a", { class: "btn small ghost", href: url(), target: "_blank", rel: "noopener", text: "פתיחת הדף" }),
+        h("label", { class: "row small muted" }, "כותרת בדף:", h("input", { type: "text", value: p.items_share_title || "", placeholder: p.name, "aria-label": "כותרת בדף הלקוח",
+          on: { change: async e => { await save({ items_share_title: e.target.value.trim() || null }); toast("נשמר"); } } })),
+        h("span", { class: "spacer" }),
+        confirmButton("ביטול הלינק", async () => { await save({ items_share_token: null }); paint(); toast("הלינק בוטל. מי שיש לו אותו כבר לא יכול להיכנס."); }, "btn small ghost")),
+      h("div", { class: "row small" }, h("span", { class: "muted", text: "מה מוצג:" }),
+        ITEM_CATEGORIES.filter(c => counts[c.key] || cats.includes(c.key)).map(c => h("label", { class: "row" },
+          h("input", { type: "checkbox", checked: cats.includes(c.key), on: { change: async e => {
+            const next = e.target.checked ? [...new Set([...(p.items_share_cats || []), c.key])] : (p.items_share_cats || []).filter(k => k !== c.key);
+            await save({ items_share_cats: next }); toast("נשמר");
+          } } }), `${c.label} (${counts[c.key] || 0})`))),
+      h("div", { class: "row small" },
+        h("label", { class: "row" }, h("input", { type: "checkbox", checked: !!p.items_share_prices, on: { change: async e => { await save({ items_share_prices: e.target.checked }); toast("נשמר"); } } }), "להציג מחירים"),
+        h("label", { class: "row" }, h("input", { type: "checkbox", checked: !!p.items_share_notes, on: { change: async e => { await save({ items_share_notes: e.target.checked }); toast("נשמר"); } } }), "להציג הערות"))
+    ] : [
+      h("p", { class: "small muted", text: "לינק אחד ללקוחות עם כל הרשימה, והקישורים למוצרים לחיצים. בהתחלה מוצגות כל הקטגוריות שיש בהן פריטים, חוץ מעבודות קבלן, בלי מחירים ובלי הערות. אפשר לשנות את זה אחר כך." }),
+      h("div", { class: "row" }, h("button", { class: "btn small", type: "button", text: "יצירת לינק ללקוחות", on: { click: async () => {
+        const startCats = ITEM_CATEGORIES.filter(c => counts[c.key] && c.key !== "contractor").map(c => c.key);
+        await save({ items_share_token: crypto.randomUUID(), items_share_cats: startCats });
+        paint(); copyText(url());
+      } } }))
+    ];
+    box.replaceChildren(h("summary", { text: p.items_share_token ? "לינק ללקוחות – פעיל" : "לינק ללקוחות" }), ...body);
+  };
+  paint();
+  return box;
 }
 
 // Supplier quotes: the file goes to private storage; Claude reads pending ones and fills the table

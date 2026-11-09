@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>designbyshirley · חומרים ורכישות</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Bellefair&display=swap">
+<style>
+/* Read-only client page for a project's materials list, opened through a secret link (?t=token).
+   Shows the categories Shirley chose, grouped by room, with clickable product links. */
+:root{
+  --bg:#F3F3F0; --surface:#FFFFFF; --sunk:#E7E6E1; --ink:#262A28; --muted:#6A6F6B; --line:#DAD9D3;
+  --oak:#93693D; --oak-soft:#F2E9DD;
+  --display:"Bellefair","Frank Ruhl Libre",Georgia,serif;
+  --body:"Assistant","Segoe UI",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#1B1D1C; --surface:#242725; --sunk:#2D302E; --ink:#ECEBE6; --muted:#A2A7A2; --line:#3A3E3B;
+  --oak:#CDA678; --oak-soft:#3A3128; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55;padding-bottom:env(safe-area-inset-bottom,0px)}
+:focus-visible{outline:2px solid var(--oak);outline-offset:2px}
+.wrap{max-width:1000px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+.top{padding-block:44px 26px}
+.brand{margin:0;font-size:12px;letter-spacing:.26em;color:var(--muted);direction:ltr;unicode-bidi:isolate}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(40px,7vw,62px);line-height:1.05;margin:10px 0 8px;text-wrap:balance}
+.sub{margin:0;color:var(--muted);font-size:17px}
+
+.secnav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.secnav .wrap{display:flex;gap:26px;overflow-x:auto;scrollbar-width:none}
+.secnav a{display:flex;align-items:baseline;gap:7px;padding-block:14px 13px;color:var(--muted);text-decoration:none;font-weight:600;white-space:nowrap;border-bottom:2px solid transparent}
+.secnav a:hover{color:var(--ink);border-bottom-color:var(--oak)}
+.secnav .n{font-size:13px;font-weight:400;font-variant-numeric:tabular-nums}
+
+section{padding-block:44px 6px;scroll-margin-top:56px}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px 16px;flex-wrap:wrap;margin-bottom:18px}
+h2{font-family:var(--display);font-weight:400;font-size:34px;line-height:1.1;margin:0}
+.sec-head p{margin:0;color:var(--muted);font-size:15px}
+h3{font-size:14px;letter-spacing:.06em;color:var(--oak);font-weight:700;margin:22px 0 8px}
+.state{padding-block:80px;color:var(--muted);font-size:17px}
+
+.list{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.list>li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:center;padding:15px 20px;border-top:1px solid var(--line)}
+.list>li:first-child{border-top:0}
+.item-name{font-weight:600;font-size:17px}
+.qty{font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.model{color:var(--muted);font-size:15px}
+.meta{display:flex;flex-wrap:wrap;gap:2px 16px;font-size:14px;color:var(--muted);margin-top:2px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);vertical-align:-1px;margin-inline-end:5px}
+.line-note{font-size:14px;color:var(--muted);margin-top:4px}
+.end{display:flex;align-items:center;gap:14px;justify-self:end}
+.price{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.go{font:600 14px var(--body);padding:7px 15px;border-radius:999px;border:1px solid var(--oak);color:var(--oak);text-decoration:none;white-space:nowrap}
+.go:hover{background:var(--oak-soft)}
+.total{margin:12px 0 0;text-align:left;color:var(--muted);font-size:15px}
+.total b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+footer{padding-block:56px 40px;color:var(--muted);font-size:13px}
+footer .brand{display:inline}
+
+@media (max-width:520px){
+  .top{padding-block:30px 20px}
+  .list>li{grid-template-columns:1fr;padding:13px 14px}
+  .end{justify-self:start}
+}
+</style>
+</head>
+<body>
+<div id="app"><p class="wrap state">טוען את הרשימה…</p></div>
+<script>
+(function(){
+'use strict';
+var SUPABASE_URL='https://fsygskqtzlegktwhivej.supabase.co';
+var KEY='sb_publishable_K26rM_RD4giaWqMcNPewlg_0JyZe4LW';
+var TOKEN=new URLSearchParams(location.search).get('t')||'';
+// Same order and names as the CRM's materials tab
+var CATS=[['tiles','ריצוף וחיפוי'],['sanitary','כלים סניטריים וארונות רחצה'],['lighting','גופי תאורה'],['colors','גוונים לקירות'],
+  ['carpentry','נגרות'],['furniture','ריהוט'],['decor','טקסטיל ואקססוריז'],['kitchen','נלווים למטבח'],['contractor','עבודות קבלן']];
+var app=document.getElementById('app');
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function safeLink(u){u=String(u||'').trim();return /^https?:\/\//i.test(u)?u:''}
+function money(n){return '₪'+Number(n).toLocaleString('he-IL',{maximumFractionDigits:2})}
+function times(s){return String(s).replace(/(\d)\s*[xX×]\s*(\d)/g,'$1×$2')}
+function showState(msg){app.innerHTML='<p class="wrap state">'+esc(msg)+'</p>'}
+
+function row(x,prices,sup){
+  var q=x.quantity!=null&&Number(x.quantity)!==1?' <span class="qty">× '+esc(Number(x.quantity))+'</span>':'';
+  var meta=[];
+  if(x.area)meta.push(esc(x.area));
+  if(x.size)meta.push('<span dir="auto">'+esc(times(x.size))+'</span>');
+  if(x.color||x.hex)meta.push((x.hex?'<span class="sw" style="background:'+esc(x.hex)+'"></span>':'')+esc(x.color||''));
+  if(x.supplier&&x.supplier!==sup)meta.push(esc(x.supplier));
+  var link=safeLink(x.link),end='';
+  if(prices&&x.unit_price!=null)end+='<span class="price">'+money(x.unit_price)+'</span>';
+  if(link)end+='<a class="go" href="'+esc(link)+'" target="_blank" rel="noopener">למוצר ↗</a>';
+  return '<li><div><div class="item-name">'+esc(x.name||x.model||'')+q+'</div>'+
+    (x.name&&x.model?'<div class="model">'+esc(x.model)+'</div>':'')+
+    (meta.length?'<div class="meta">'+meta.map(function(m){return '<span>'+m+'</span>'}).join('')+'</div>':'')+
+    (x.notes?'<div class="line-note">'+esc(x.notes)+'</div>':'')+'</div>'+
+    (end?'<div class="end">'+end+'</div>':'')+'</li>';
+}
+function render(d){
+  var shown=CATS.filter(function(c){return d.items.some(function(x){return x.category===c[0]})});
+  var h='<header class="wrap top"><p class="brand">designbyshirley</p><h1>'+esc(d.title)+'</h1><p class="sub">חומרים ורכישות</p></header>';
+  if(shown.length>1)h+='<nav class="secnav" aria-label="חלקי הדף"><div class="wrap">'+shown.map(function(c){
+    return '<a href="#'+c[0]+'">'+esc(c[1])+' <span class="n">'+d.items.filter(function(x){return x.category===c[0]}).length+'</span></a>'}).join('')+'</div></nav>';
+  h+='<main class="wrap">';
+  if(!shown.length)h+='<p class="state">עוד אין פריטים ברשימה.</p>';
+  shown.forEach(function(c){
+    var list=d.items.filter(function(x){return x.category===c[0]}),groups=[];
+    list.forEach(function(x){var r=(x.room||'').trim(),g=groups.filter(function(gr){return gr.room===r})[0];if(!g)groups.push(g={room:r,items:[]});g.items.push(x)});
+    var sup=(d.suppliers||{})[c[0]];
+    h+='<section id="'+c[0]+'"><div class="sec-head"><h2>'+esc(c[1])+'</h2>'+(sup?'<p>'+(c[0]==='contractor'?'קבלן: ':'ספק: ')+esc(sup)+'</p>':'')+'</div>';
+    groups.forEach(function(g){
+      if(g.room&&!(groups.length===1&&!g.room))h+='<h3>'+esc(g.room)+'</h3>';
+      h+='<ul class="list">'+g.items.map(function(x){return row(x,d.prices,sup)}).join('')+'</ul>';
+    });
+    if(d.prices){
+      var total=list.reduce(function(a,x){return a+(x.unit_price==null?0:Number(x.unit_price)*(x.quantity==null?1:Number(x.quantity)))},0);
+      if(total)h+='<p class="total">סה"כ: <b>'+money(total)+'</b></p>';
+    }
+    h+='</section>';
+  });
+  h+='</main><footer class="wrap"><span class="brand">designbyshirley</span> · עיצוב פנים</footer>';
+  app.innerHTML=h;
+}
+
+if(!TOKEN){showState('הקישור לא שלם. כדאי לפתוח אותו שוב מההודעה.');return}
+fetch(SUPABASE_URL+'/rest/v1/rpc/items_share',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({token:TOKEN})})
+  .then(function(r){if(!r.ok)throw new Error(r.status);return r.json()})
+  .then(function(d){
+    if(!d){showState('הקישור לא פעיל יותר. אפשר לבקש קישור חדש משירלי.');return}
+    document.title=d.title+' · חומרים ורכישות · designbyshirley';render(d);
+  })
+  .catch(function(){showState('לא הצלחנו לטעון את הרשימה. כדאי לנסות שוב בעוד רגע.')});
+})();
+</script>
+</body>
+</html>
