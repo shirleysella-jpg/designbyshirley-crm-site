@@ -864,7 +864,21 @@ function clientView(p, cat, list) {
   body:not(.prices) .price, body:not(.prices) .total { display: none; }
   body:not(.notes) .note { display: none; }
   @media (max-width: 640px) { .page { padding: 24px 14px; } h1 { font-size: 26px; } table { font-size: 13px; } td, th { padding: 7px 5px; } }
-  @media print { .tools { display: none; } .page { padding: 0; } tr { break-inside: avoid; } @page { margin: 14mm; } }
+  @media print {
+    .tools { display: none; }
+    html, body { height: auto; }
+    body { font-size: 13px; }
+    .page { padding: 0; }
+    h1 { font-size: 28px; margin: 10px 0 2px; }
+    .sub { margin-bottom: 16px; }
+    th, td { padding: 6px 8px; }
+    tr.room td { font-size: 17px; padding-top: 14px; }
+    tr { break-inside: avoid; }
+    /* keep the total and the signature line with the table, never alone on an extra page */
+    .total, footer { break-before: avoid; break-inside: avoid; }
+    footer { margin-top: 18px; }
+    @page { margin: 14mm; }
+  }
 </style></head><body>
 <div class="tools">
   <button type="button" onclick="print()">שמירה כ-PDF / הדפסה</button>
