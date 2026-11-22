@@ -809,7 +809,7 @@ function quotesCard(ctx, cat) {
 }
 
 // A clean page of one list for clients, saved as PDF from the print dialog.
-// Prices and notes are hidden unless switched on; status is internal and never shown.
+// Prices are hidden unless switched on, notes show unless switched off; status is internal and never shown.
 function clientView(p, cat, list) {
   if (!list.length) { toast("אין עדיין פריטים ברשימה"); return; }
   const win = window.open("", "_blank");
@@ -822,6 +822,8 @@ function clientView(p, cat, list) {
   const cols = cat.cols.filter(([f, , type]) => !["status", "notes", "link", "room", "waste_pct"].includes(f) && !(f === "supplier" && cat.headerSupplier)
     && (type === "calc" || list.some(x => x[f] != null && String(x[f]).trim() !== "")));
   const hasLinks = list.some(x => x.link);
+  // notes show by default; the column is left out when no row has a note
+  const hasNotes = list.some(x => x.notes != null && String(x.notes).trim() !== "");
   const groups = [];
   for (const x of list) {
     const room = (x.room || "").trim() || "כללי";
@@ -833,12 +835,12 @@ function clientView(p, cat, list) {
   // the line-total column only matters with the totals switch on (with options it would just repeat the price)
   const colClass = f => (priceCols.includes(f) ? "price " : "") + (f === "_total" ? "tcol " : "");
   const head = cols.map(([f, label]) => `<th class="${colClass(f)}">${esc(label)}</th>`).join("")
-    + `<th class="note">הערות</th>` + (hasLinks ? "<th></th>" : "");
+    + (hasNotes ? `<th class="note">הערות</th>` : "") + (hasLinks ? "<th></th>" : "");
   const oneGroup = groups.length === 1 && groups[0].room === "כללי";
-  const body = groups.map(g => `<tbody>${oneGroup ? "" : `<tr class="room"><td colspan="${cols.length + 1 + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`}`
+  const body = groups.map(g => `<tbody>${oneGroup ? "" : `<tr class="room"><td colspan="${cols.length + (hasNotes ? 1 : 0) + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`}`
     + g.items.map(x => "<tr>" + cols.map(([f, , type]) => type === "swatch" ? `<td>${x[f] ? `<span class="sw" style="background:${esc(x[f])}"></span>` : ""}</td>`
       : `<td class="${colClass(f)}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
-      + `<td class="note">${esc(x.notes)}</td>` + (hasLinks ? `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">לצפייה</a>` : ""}</td>` : "") + "</tr>").join("")
+      + (hasNotes ? `<td class="note">${esc(x.notes)}</td>` : "") + (hasLinks ? `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">לצפייה</a>` : ""}</td>` : "") + "</tr>").join("")
     + "</tbody>").join("");
   const total = list.reduce((a, x) => a + (itemTotal(x, cat.key) || 0), 0);
   const title = `${p.number ? p.number + " · " : ""}${p.name} – ${cat.label}`;
@@ -883,11 +885,11 @@ function clientView(p, cat, list) {
     footer { margin-top: 18px; }
     @page { margin: 14mm; }
   }
-</style></head><body>
+</style></head><body class="notes">
 <div class="tools">
   <button type="button" onclick="print()">שמירה כ-PDF / הדפסה</button>
   <label><input type="checkbox" onchange="document.body.classList.toggle('prices', this.checked)"> להציג מחירים</label>
-  <label><input type="checkbox" onchange="document.body.classList.toggle('notes', this.checked)"> להציג הערות</label>
+  ${hasNotes ? `<label><input type="checkbox" checked onchange="document.body.classList.toggle('notes', this.checked)"> להציג הערות</label>` : ""}
   ${total ? `<label title="לא לסמן כשברשימה יש כמה אופציות לאותו פריט"><input type="checkbox" onchange="document.body.classList.toggle('totals', this.checked)"> להציג סה"כ</label>` : ""}
   <span style="color:var(--muted)">בחלון ההדפסה בוחרים "שמירה כ-PDF".</span>
 </div>
