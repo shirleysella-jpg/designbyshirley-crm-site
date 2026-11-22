@@ -818,7 +818,9 @@ function clientView(p, cat, list) {
   const show = (x, f, type) => type === "calc" ? (f === "_order" ? (orderQty(x) ?? "") : (itemTotal(x, cat.key) == null ? "" : money(itemTotal(x, cat.key))))
     : f === "unit_price" ? (x[f] == null ? "" : money(x[f])) : type === "date" ? fmt(x[f]) : x[f] ?? "";
   const priceCols = ["unit_price", "_total"];
-  const cols = cat.cols.filter(([f]) => !["status", "notes", "link", "room", "waste_pct"].includes(f) && !(f === "supplier" && cat.headerSupplier));
+  // columns that are empty for every row are left out, so the table has room to breathe
+  const cols = cat.cols.filter(([f, , type]) => !["status", "notes", "link", "room", "waste_pct"].includes(f) && !(f === "supplier" && cat.headerSupplier)
+    && (type === "calc" || list.some(x => x[f] != null && String(x[f]).trim() !== "")));
   const hasLinks = list.some(x => x.link);
   const groups = [];
   for (const x of list) {
@@ -828,12 +830,14 @@ function clientView(p, cat, list) {
     g.items.push(x);
   }
   const supplier = cat.headerSupplier ? (p.item_suppliers || {})[cat.key] : null;
-  const head = cols.map(([f, label]) => `<th class="${priceCols.includes(f) ? "price" : ""}">${esc(label)}</th>`).join("")
+  // the line-total column only matters with the totals switch on (with options it would just repeat the price)
+  const colClass = f => (priceCols.includes(f) ? "price " : "") + (f === "_total" ? "tcol " : "");
+  const head = cols.map(([f, label]) => `<th class="${colClass(f)}">${esc(label)}</th>`).join("")
     + `<th class="note">הערות</th>` + (hasLinks ? "<th></th>" : "");
   const oneGroup = groups.length === 1 && groups[0].room === "כללי";
   const body = groups.map(g => `<tbody>${oneGroup ? "" : `<tr class="room"><td colspan="${cols.length + 1 + (hasLinks ? 1 : 0)}">${esc(g.room)}</td></tr>`}`
     + g.items.map(x => "<tr>" + cols.map(([f, , type]) => type === "swatch" ? `<td>${x[f] ? `<span class="sw" style="background:${esc(x[f])}"></span>` : ""}</td>`
-      : `<td class="${priceCols.includes(f) ? "price " : ""}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
+      : `<td class="${colClass(f)}${type === "num" || type === "calc" ? "num" : ""}">${esc(show(x, f, type))}</td>`).join("")
       + `<td class="note">${esc(x.notes)}</td>` + (hasLinks ? `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener">לצפייה</a>` : ""}</td>` : "") + "</tr>").join("")
     + "</tbody>").join("");
   const total = list.reduce((a, x) => a + (itemTotal(x, cat.key) || 0), 0);
@@ -861,7 +865,7 @@ function clientView(p, cat, list) {
   footer { margin-top: 40px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; }
   .tools { position: sticky; top: 0; background: var(--soft); border-bottom: 1px solid var(--line); padding: 10px 32px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; font-size: 14px; }
   .tools button { background: var(--oak); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
-  body:not(.prices) .price, body:not(.prices) .total { display: none; }
+  body:not(.prices) .price, body:not(.totals) .total, body:not(.totals) .tcol { display: none; }
   body:not(.notes) .note { display: none; }
   @media (max-width: 640px) { .page { padding: 24px 14px; } h1 { font-size: 26px; } table { font-size: 13px; } td, th { padding: 7px 5px; } }
   @media print {
@@ -884,6 +888,7 @@ function clientView(p, cat, list) {
   <button type="button" onclick="print()">שמירה כ-PDF / הדפסה</button>
   <label><input type="checkbox" onchange="document.body.classList.toggle('prices', this.checked)"> להציג מחירים</label>
   <label><input type="checkbox" onchange="document.body.classList.toggle('notes', this.checked)"> להציג הערות</label>
+  ${total ? `<label title="לא לסמן כשברשימה יש כמה אופציות לאותו פריט"><input type="checkbox" onchange="document.body.classList.toggle('totals', this.checked)"> להציג סה"כ</label>` : ""}
   <span style="color:var(--muted)">בחלון ההדפסה בוחרים "שמירה כ-PDF".</span>
 </div>
 <div class="page">
